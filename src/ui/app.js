@@ -258,7 +258,9 @@ async function handleConfirmDownload() {
     if (!extractedMedia || selectedQualityIndex === undefined) return;
 
     closeQualityModal();
-    showSnackbar('Starting ultra-fast multi-chunk download...', 'zap');
+    showSnackbar('Starting fast media download...', 'zap');
+
+    const q = extractedMedia.qualities[selectedQualityIndex] || extractedMedia.qualities[0];
 
     try {
         const res = await fetch('/api/download', {
@@ -269,16 +271,36 @@ async function handleConfirmDownload() {
                 selectedQualityIndex: selectedQualityIndex
             })
         });
-        const data = await res.json();
 
-        if (data.success) {
-            urlInput.value = '';
-            fetchDownloadsHistory();
+        const contentType = res.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+            const data = await res.json();
+            if (data.success) {
+                urlInput.value = '';
+                fetchDownloadsHistory();
+            } else {
+                showSnackbar(`Download Error: ${data.error || 'Failed'}`, 'alert-triangle');
+            }
         } else {
-            showSnackbar(`Download Error: ${data.error}`, 'alert-triangle');
+            // Binary stream response (Vercel serverless production mode)
+            const blob = await res.blob();
+            const safeTitle = (extractedMedia.title || 'media').replace(/[^a-zA-Z0-9_\-\s]/g, '').trim().substring(0, 35);
+            const fileName = `${extractedMedia.platform}_${safeTitle}_${Date.now()}.${q.format || 'mp4'}`;
+
+            const blobUrl = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = blobUrl;
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+
+            urlInput.value = '';
+            showSnackbar('Download completed!', 'check-circle-2');
         }
     } catch (e) {
-        showSnackbar(`Error: ${e.message}`, 'alert-triangle');
+        showSnackbar(`Download Error: ${e.message}`, 'alert-triangle');
     }
 }
 

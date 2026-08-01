@@ -3,6 +3,7 @@ const facebookScraper = require('./engine/facebookScraper.js');
 const tiktokScraper = require('./engine/tiktokScraper.js');
 const twitterScraper = require('./engine/twitterScraper.js');
 const pinterestScraper = require('./engine/pinterestScraper.js');
+const youtubeScraper = require('./engine/youtubeScraper.js');
 
 module.exports = async (req, res) => {
     // Enable CORS
@@ -28,7 +29,9 @@ module.exports = async (req, res) => {
     try {
         let mediaData = null;
 
-        if (cleanUrl.includes('instagram.com')) {
+        if (cleanUrl.includes('youtube.com') || cleanUrl.includes('youtu.be')) {
+            mediaData = await youtubeScraper.extract(cleanUrl);
+        } else if (cleanUrl.includes('instagram.com')) {
             mediaData = await instagramScraper.extract(cleanUrl);
         } else if (cleanUrl.includes('facebook.com') || cleanUrl.includes('fb.watch') || cleanUrl.includes('fb.gg')) {
             mediaData = await facebookScraper.extract(cleanUrl);
@@ -39,7 +42,7 @@ module.exports = async (req, res) => {
         } else if (cleanUrl.includes('pinterest.com') || cleanUrl.includes('pin.it')) {
             mediaData = await pinterestScraper.extract(cleanUrl);
         } else {
-            return res.status(400).json({ error: 'Unsupported URL. Supported platforms: Instagram, Facebook, TikTok, Twitter/X, and Pinterest.' });
+            return res.status(400).json({ error: 'Unsupported URL. Supported platforms: YouTube, Instagram, Facebook, TikTok, Twitter/X, and Pinterest.' });
         }
 
         return res.status(200).json({ success: true, media: mediaData, data: mediaData });

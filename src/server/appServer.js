@@ -10,6 +10,7 @@ const facebookScraper = require('../engine/facebookScraper.js');
 const tiktokScraper = require('../engine/tiktokScraper.js');
 const twitterScraper = require('../engine/twitterScraper.js');
 const pinterestScraper = require('../engine/pinterestScraper.js');
+const youtubeScraper = require('../engine/youtubeScraper.js');
 const chunkDownloader = require('../engine/chunkDownloader.js');
 
 const app = express();
@@ -60,7 +61,9 @@ app.post('/api/extract', async (req, res) => {
     try {
         let mediaData = null;
 
-        if (cleanUrl.includes('instagram.com')) {
+        if (cleanUrl.includes('youtube.com') || cleanUrl.includes('youtu.be')) {
+            mediaData = await youtubeScraper.extract(cleanUrl);
+        } else if (cleanUrl.includes('instagram.com')) {
             mediaData = await instagramScraper.extract(cleanUrl);
         } else if (cleanUrl.includes('facebook.com') || cleanUrl.includes('fb.watch') || cleanUrl.includes('fb.gg')) {
             mediaData = await facebookScraper.extract(cleanUrl);
@@ -71,7 +74,7 @@ app.post('/api/extract', async (req, res) => {
         } else if (cleanUrl.includes('pinterest.com') || cleanUrl.includes('pin.it')) {
             mediaData = await pinterestScraper.extract(cleanUrl);
         } else {
-            return res.status(400).json({ error: 'Unsupported URL. Supported platforms: Instagram, Facebook, TikTok, Twitter/X, and Pinterest.' });
+            return res.status(400).json({ error: 'Unsupported URL. Supported platforms: YouTube, Instagram, Facebook, TikTok, Twitter/X, and Pinterest.' });
         }
 
         return res.json({ success: true, media: mediaData, data: mediaData });
@@ -175,7 +178,6 @@ app.post('/api/download', async (req, res) => {
         broadcastWS({
             type: 'download_error',
             taskId,
-            data: record,
             error: e.message
         });
     }

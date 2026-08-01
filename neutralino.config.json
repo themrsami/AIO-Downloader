@@ -1,0 +1,27 @@
+{
+  "applicationId": "js.neutralino.mediadownloader",
+  "version": "1.0.0",
+  "defaultMode": "window",
+  "port": 38920,
+  "documentRoot": "/src/ui/",
+  "url": "/",
+  "modes": {
+    "window": {
+      "title": "Material Downloader v3 - Instagram & Facebook",
+      "width": 1200,
+      "height": 800,
+      "minWidth": 900,
+      "minHeight": 600,
+      "center": true,
+      "resizable": true,
+      "maximize": false,
+      "hidden": false,
+      "alwaysOnTop": false
+    }
+  },
+  "cli": {
+    "binaryName": "media-downloader-m3",
+    "resourcesPath": "/src/ui/",
+    "extensionsPath": "/"
+  }
+}

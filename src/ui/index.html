@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Material Downloader v3 - Multi-Site Fast Media Downloader</title>
+    <link rel="stylesheet" href="styles/m3-theme.css">
+    <!-- Lucide Icons CDN -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body>
+    <div class="app-container">
+
+        <!-- M3 Navigation Rail -->
+        <nav class="m3-nav-rail">
+            <div class="m3-nav-brand">
+                <div class="brand-logo">
+                    <i data-lucide="zap"></i>
+                </div>
+                <span class="brand-name">M3 Downloader</span>
+            </div>
+
+            <div class="m3-nav-items">
+                <button class="m3-nav-item active" data-view="downloader">
+                    <div class="m3-nav-indicator">
+                        <i data-lucide="download"></i>
+                    </div>
+                    <span class="m3-nav-label">Downloader</span>
+                </button>
+
+                <button class="m3-nav-item" data-view="batch">
+                    <div class="m3-nav-indicator">
+                        <i data-lucide="layers"></i>
+                    </div>
+                    <span class="m3-nav-label">Batch</span>
+                </button>
+
+                <button class="m3-nav-item" data-view="gallery">
+                    <div class="m3-nav-indicator">
+                        <i data-lucide="folder-heart"></i>
+                    </div>
+                    <span class="m3-nav-label">Gallery</span>
+                </button>
+
+                <button class="m3-nav-item" data-view="settings">
+                    <div class="m3-nav-indicator">
+                        <i data-lucide="settings"></i>
+                    </div>
+                    <span class="m3-nav-label">Settings</span>
+                </button>
+            </div>
+
+            <div class="m3-nav-bottom">
+                <button class="m3-btn-icon" id="themeToggle" title="Toggle Light/Dark Theme">
+                    <i data-lucide="moon"></i>
+                </button>
+            </div>
+        </nav>
+
+        <!-- Main Viewport -->
+        <main class="main-viewport">
+
+            <!-- Top App Bar -->
+            <header class="top-app-bar">
+                <div class="app-title-section">
+                    <h1 id="pageTitle">
+                        <i data-lucide="download-cloud" style="color: var(--m3-color-primary)"></i>
+                        Media Downloader v3
+                    </h1>
+                    <span class="subtitle">Ultra-fast Multi-Site Downloader (Instagram, Facebook, TikTok, Twitter/X, Pinterest)</span>
+                </div>
+
+                <div class="top-actions">
+                    <!-- Palette Switcher -->
+                    <div class="chip-group" style="margin: 0;">
+                        <button class="m3-btn-icon palette-btn" data-palette="purple" title="Material Purple" style="color: #D0BCFF;">
+                            <i data-lucide="circle-dot"></i>
+                        </button>
+                        <button class="m3-btn-icon palette-btn" data-palette="emerald" title="Emerald Cyber" style="color: #34D399;">
+                            <i data-lucide="circle-dot"></i>
+                        </button>
+                        <button class="m3-btn-icon palette-btn" data-palette="ocean" title="Ocean Blue" style="color: #60A5FA;">
+                            <i data-lucide="circle-dot"></i>
+                        </button>
+                        <button class="m3-btn-icon palette-btn" data-palette="sunset" title="Sunset Coral" style="color: #F87171;">
+                            <i data-lucide="circle-dot"></i>
+                        </button>
+                    </div>
+
+                    <div class="m3-chip" id="activeCounterChip">
+                        <i data-lucide="activity"></i>
+                        <span id="activeCountText">0 Active Downloads</span>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Main Scrollable Content -->
+            <div class="content-area">
+
+                <!-- SECTION 1: DOWNLOADER -->
+                <section class="view-section active" id="view-downloader">
+
+                    <!-- URL Input Card -->
+                    <div class="m3-card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <i data-lucide="link"></i>
+                                Paste Media Link
+                            </div>
+                            <div class="chip-group" style="margin: 0;">
+                                <div class="m3-chip ig"><i data-lucide="instagram"></i> Instagram</div>
+                                <div class="m3-chip fb"><i data-lucide="facebook"></i> Facebook</div>
+                                <div class="m3-chip" style="background: rgba(0,242,234,0.15); color: #00F2EA;"><i data-lucide="music-2"></i> TikTok</div>
+                                <div class="m3-chip" style="background: rgba(29,155,240,0.15); color: #1D9BF0;"><i data-lucide="twitter"></i> Twitter/X</div>
+                                <div class="m3-chip" style="background: rgba(230,0,35,0.15); color: #E60023;"><i data-lucide="pin"></i> Pinterest</div>
+                            </div>
+                        </div>
+
+                        <div class="m3-input-wrapper">
+                            <i data-lucide="search" style="color: var(--m3-color-on-surface-variant); margin-left: 4px;"></i>
+                            <input type="text" id="urlInput" placeholder="Paste Instagram, Facebook, TikTok, Twitter/X, or Pinterest URL..." autocomplete="off">
+                            <button class="m3-btn-icon" id="pasteBtn" title="Paste from Clipboard">
+                                <i data-lucide="clipboard-paste"></i>
+                            </button>
+                            <button class="m3-btn m3-btn-filled" id="fetchBtn">
+                                <i data-lucide="sparkles"></i>
+                                Fetch Qualities
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Active Downloads Section -->
+                    <div class="m3-card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <i data-lucide="arrow-down-circle"></i>
+                                Active Download Manager
+                            </div>
+                            <button class="m3-btn m3-btn-tonal" id="clearCompletedBtn">
+                                <i data-lucide="trash-2"></i>
+                                Clear Completed
+                            </button>
+                        </div>
+
+                        <div class="downloads-list" id="downloadsList">
+                            <!-- Download items rendered dynamically -->
+                            <div class="empty-state" id="emptyDownloadsState" style="text-align: center; padding: 40px; color: var(--m3-color-on-surface-variant);">
+                                <i data-lucide="inbox" style="width: 48px; height: 48px; opacity: 0.5; margin-bottom: 12px;"></i>
+                                <p style="font-size: 15px; font-weight: 500;">No active downloads</p>
+                                <p style="font-size: 12px; margin-top: 4px;">Paste an Instagram, Facebook, TikTok, Twitter/X, or Pinterest link above to begin downloading at ultra-high speed.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                </section>
+
+                <!-- SECTION 2: BATCH DOWNLOADER -->
+                <section class="view-section" id="view-batch">
+                    <div class="m3-card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <i data-lucide="layers"></i>
+                                Batch Multi-Link Downloader
+                            </div>
+                        </div>
+
+                        <p style="font-size: 13px; color: var(--m3-color-on-surface-variant); margin-bottom: 16px;">
+                            Paste multiple URLs below (one URL per line). The engine will extract and download all items in queue.
+                        </p>
+
+                        <textarea id="batchInput" style="width: 100%; height: 160px; background-color: var(--m3-color-surface-container-high); border: 1px solid var(--m3-color-outline-variant); border-radius: var(--m3-shape-m); color: var(--m3-color-on-surface); padding: 14px; font-family: var(--m3-font-body); font-size: 14px; outline: none; resize: vertical;" placeholder="https://www.instagram.com/reel/123/&#10;https://www.tiktok.com/@user/video/456&#10;https://x.com/user/status/789"></textarea>
+
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 16px;">
+                            <div style="display: flex; gap: 12px; align-items: center;">
+                                <label style="font-size: 13px; color: var(--m3-color-on-surface-variant);">Default Quality:</label>
+                                <select id="batchQualitySelect" style="background-color: var(--m3-color-surface-container-high); color: var(--m3-color-on-surface); border: 1px solid var(--m3-color-outline-variant); border-radius: var(--m3-shape-s); padding: 8px 12px; outline: none;">
+                                    <option value="highest_video">Best HD Video (1080p/720p)</option>
+                                    <option value="standard_video">Standard SD Video (480p)</option>
+                                    <option value="audio_mp3">Audio MP3 Only</option>
+                                </select>
+                            </div>
+
+                            <button class="m3-btn m3-btn-filled" id="startBatchBtn">
+                                <i data-lucide="play-circle"></i>
+                                Start Batch Download Queue
+                            </button>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- SECTION 3: MEDIA GALLERY -->
+                <section class="view-section" id="view-gallery">
+                    <div class="m3-card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <i data-lucide="folder-heart"></i>
+                                Downloaded Media Gallery
+                            </div>
+                            <div style="display: flex; gap: 12px;">
+                                <button class="m3-btn m3-btn-tonal" id="openDownloadsFolderBtn">
+                                    <i data-lucide="folder-open"></i>
+                                    Open Downloads Folder
+                                </button>
+                            </div>
+                        </div>
+
+                        <div id="galleryGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; margin-top: 16px;">
+                            <!-- Gallery items rendered dynamically -->
+                        </div>
+                    </div>
+                </section>
+
+                <!-- SECTION 4: SETTINGS -->
+                <section class="view-section" id="view-settings">
+                    <div class="m3-card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <i data-lucide="sliders"></i>
+                                Application Preferences
+                            </div>
+                        </div>
+
+                        <div style="display: flex; flex-direction: column; gap: 20px; margin-top: 12px;">
+                            <div>
+                                <label style="font-size: 14px; font-weight: 600; display: block; margin-bottom: 6px;">Download Storage Folder</label>
+                                <div class="m3-input-wrapper" style="padding: 4px 16px;">
+                                    <input type="text" id="storagePathInput" readonly style="font-size: 13px;">
+                                    <button class="m3-btn m3-btn-tonal" id="changeFolderBtn" style="height: 36px; padding: 0 16px;">
+                                        <i data-lucide="folder"></i> Explore
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div style="display: flex; align-items: center; justify-content: space-between; padding: 16px; background-color: var(--m3-color-surface-container-high); border-radius: var(--m3-shape-l);">
+                                <div>
+                                    <div style="font-weight: 600; font-size: 14px;">Multi-Thread Parallel Chunk Download Engine</div>
+                                    <div style="font-size: 12px; color: var(--m3-color-on-surface-variant); margin-top: 2px;">Uses 6 parallel byte streams to download videos up to 10x faster than yt-dlp.</div>
+                                </div>
+                                <span class="badge-quality" style="padding: 6px 12px; font-size: 12px;">6 Parallel Streams</span>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+            </div>
+        </main>
+    </div>
+
+    <!-- M3 QUALITY SELECTION DIALOG MODAL -->
+    <div class="m3-dialog-overlay" id="qualityDialog">
+        <div class="m3-dialog">
+            <div class="m3-dialog-header">
+                <h3>Select Quality Format</h3>
+                <button class="m3-btn-icon" id="closeQualityDialogBtn">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+
+            <!-- Media Summary Header -->
+            <div style="display: flex; gap: 16px; align-items: center; background-color: var(--m3-color-surface-container); padding: 12px; border-radius: var(--m3-shape-l);">
+                <img id="dialogThumb" src="" alt="Thumbnail" style="width: 72px; height: 72px; border-radius: var(--m3-shape-m); object-fit: cover;">
+                <div style="flex: 1; overflow: hidden;">
+                    <div id="dialogTitle" style="font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Media Title</div>
+                    <div id="dialogAuthor" style="font-size: 12px; color: var(--m3-color-on-surface-variant); margin-top: 4px;">Author</div>
+                    <div id="dialogPlatform" class="m3-chip" style="margin-top: 6px; display: inline-flex;">Platform</div>
+                </div>
+            </div>
+
+            <p style="font-size: 13px; color: var(--m3-color-on-surface-variant);">Choose your desired video quality or audio extraction format:</p>
+
+            <div class="quality-options-list" id="qualityOptionsList">
+                <!-- Quality items injected dynamically -->
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 8px;">
+                <button class="m3-btn m3-btn-tonal" id="cancelQualityBtn">Cancel</button>
+                <button class="m3-btn m3-btn-filled" id="confirmDownloadBtn">
+                    <i data-lucide="zap"></i>
+                    Start Fast Download
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- M3 VIDEO PLAYER PREVIEW DIALOG -->
+    <div class="m3-dialog-overlay" id="playerDialog">
+        <div class="m3-dialog" style="max-width: 720px;">
+            <div class="m3-dialog-header">
+                <h3 id="playerModalTitle">Media Player Preview</h3>
+                <button class="m3-btn-icon" id="closePlayerDialogBtn">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+
+            <div style="width: 100%; border-radius: var(--m3-shape-l); overflow: hidden; background-color: #000; display: flex; align-items: center; justify-content: center; min-height: 320px;">
+                <video id="previewVideoPlayer" controls style="max-width: 100%; max-height: 480px; width: 100%; outline: none;"></video>
+            </div>
+        </div>
+    </div>
+
+    <!-- M3 SNACKBAR / TOAST NOTIFICATION -->
+    <div class="m3-snackbar" id="appSnackbar">
+        <i data-lucide="info" id="snackbarIcon"></i>
+        <span id="snackbarMessage">Notification message</span>
+        <button class="action-btn" id="snackbarActionBtn" style="display: none;">ACTION</button>
+    </div>
+
+    <!-- Application Frontend Logic -->
+    <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,47 @@
+{
+  "manifest_version": 3,
+  "name": "AIO Media Downloader - Ultra Fast 4K",
+  "version": "2.0.0",
+  "description": "Download 4K/HD Videos & MP3 Audio from YouTube, Instagram, Facebook, TikTok, Twitter/X, and Pinterest instantly with 1-click.",
+  "permissions": [
+    "activeTab",
+    "downloads",
+    "storage",
+    "scripting"
+  ],
+  "host_permissions": [
+    "http://localhost:38920/*",
+    "https://aio-downloader-sigma.vercel.app/*",
+    "https://*.youtube.com/*",
+    "https://*.youtu.be/*",
+    "https://*.instagram.com/*",
+    "https://*.facebook.com/*",
+    "https://*.tiktok.com/*",
+    "https://*.twitter.com/*",
+    "https://*.x.com/*",
+    "https://*.pinterest.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "AIO Media Downloader"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.youtube.com/*",
+        "https://*.youtu.be/*",
+        "https://*.instagram.com/*",
+        "https://*.facebook.com/*",
+        "https://*.tiktok.com/*",
+        "https://*.twitter.com/*",
+        "https://*.x.com/*",
+        "https://*.pinterest.com/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

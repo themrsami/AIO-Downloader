@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AIO Downloader</title>
+    <link rel="stylesheet" href="popup.css">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="ext-container">
+        <!-- Top Header -->
+        <header class="ext-header">
+            <div class="brand">
+                <div class="brand-icon">⚡</div>
+                <div class="brand-text">
+                    <span class="brand-title">AIO Downloader</span>
+                    <span class="brand-subtitle">4K & MP3 Multi-Site</span>
+                </div>
+            </div>
+            <div class="server-status" id="serverStatus" title="Local Server Status">
+                <span class="status-dot offline" id="statusDot"></span>
+                <span class="status-label" id="statusLabel">Checking...</span>
+            </div>
+        </header>
+
+        <!-- Current Tab Active URL Card -->
+        <div class="card active-tab-card">
+            <div class="card-label">CURRENT PAGE</div>
+            <div class="url-display" id="tabUrlDisplay">Detecting active page...</div>
+            <button class="btn btn-primary" id="analyzeBtn">
+                <span>⚡ Fetch Qualities</span>
+            </button>
+        </div>
+
+        <!-- Media Info & Qualities Result Card -->
+        <div class="card media-card hidden" id="mediaCard">
+            <div class="media-preview">
+                <img id="mediaThumb" src="" alt="Thumbnail">
+                <div class="media-meta">
+                    <div class="media-title" id="mediaTitle"></div>
+                    <div class="media-author" id="mediaAuthor"></div>
+                </div>
+            </div>
+
+            <div class="qualities-section">
+                <label for="qualitySelect" class="select-label">CHOOSE QUALITY / FORMAT:</label>
+                <select id="qualitySelect" class="quality-select"></select>
+            </div>
+
+            <button class="btn btn-success" id="downloadBtn">
+                <span>🚀 Start Direct Download</span>
+            </button>
+        </div>
+
+        <!-- Custom Manual URL Accordion -->
+        <details class="manual-accordion">
+            <summary>Custom URL Input</summary>
+            <div class="manual-input-box">
+                <input type="text" id="manualUrlInput" placeholder="Paste YouTube, IG, TikTok, FB, Twitter/X URL...">
+                <button class="btn btn-secondary" id="fetchManualBtn">Fetch</button>
+            </div>
+        </details>
+
+        <!-- Status Toast -->
+        <div class="toast hidden" id="toast"></div>
+    </div>
+
+    <script src="popup.js"></script>
+</body>
+</html>

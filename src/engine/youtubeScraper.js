@@ -23,24 +23,24 @@ class YouTubeScraper {
 
         let mediaData = null;
 
-        // Strategy 1: YouTube ANDROID_VR InnerTube API (Direct Unthrottled Streams)
+        // Strategy 1: ANDROID_VR Client Stream Extractor
         try {
             mediaData = await this.fetchViaInnerTubeVr(videoId, urlStr);
         } catch (e) {
             console.log('YT Strategy 1 VR Error:', e.message);
         }
 
-        // Strategy 2: OEmbed Metadata + Player Response Fallback
+        // Strategy 2: TV / Web Embedded Player Stream Extractor
         if (!mediaData || !mediaData.qualities || mediaData.qualities.length === 0) {
             try {
-                mediaData = await this.fetchViaOembed(videoId, urlStr);
+                mediaData = await this.fetchViaEmbeddedPlayer(videoId, urlStr);
             } catch (e) {
-                console.log('YT Strategy 2 OEmbed Error:', e.message);
+                console.log('YT Strategy 2 Embedded Error:', e.message);
             }
         }
 
         if (!mediaData || !mediaData.qualities || mediaData.qualities.length === 0) {
-            throw new Error('Unable to extract video from YouTube URL. Please verify the video is public.');
+            throw new Error('Unable to extract direct stream from YouTube URL. This video may be age-restricted or music-licensed by YouTube.');
         }
 
         return mediaData;
@@ -50,7 +50,6 @@ class YouTubeScraper {
         let title = `YouTube Video (${videoId})`;
         let author = 'YouTube Creator';
 
-        // Fetch OEmbed metadata for clean title and author (ignore 404 for Shorts)
         try {
             const oembedUrl = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`;
             const oembedRes = await axios.get(oembedUrl, { headers: this.headers, timeout: 6000 });
@@ -58,13 +57,10 @@ class YouTubeScraper {
                 title = oembedRes.data.title || title;
                 author = oembedRes.data.author_name || author;
             }
-        } catch(e) {
-            console.log('OEmbed ignored for shorts/video:', e.message);
-        }
+        } catch(e) {}
 
         const thumbnail = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
 
-        // INNERTube ANDROID_VR Player Request
         const playerUrl = 'https://www.youtube.com/youtubei/v1/player';
         const payload = {
             context: {
@@ -97,7 +93,7 @@ class YouTubeScraper {
                 if (f.url) {
                     const isAudio = f.mimeType && f.mimeType.includes('audio');
                     let label = f.qualityLabel || '720p HD';
-                    
+
                     if (isAudio) {
                         label = 'MP3 Audio Stream (Original Track)';
                     } else {
@@ -118,7 +114,6 @@ class YouTubeScraper {
             });
 
             if (qualities.length > 0) {
-                // Sort qualities from highest resolution (1080p -> 720p -> 480p -> 360p -> audio)
                 qualities.sort((a, b) => {
                     const resA = parseInt((a.quality.match(/\d+/) || [0])[0], 10);
                     const resB = parseInt((b.quality.match(/\d+/) || [0])[0], 10);
@@ -139,23 +134,72 @@ class YouTubeScraper {
         return null;
     }
 
-    async fetchViaOembed(videoId, urlStr) {
-        const oembedUrl = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`;
-        const res = await axios.get(oembedUrl, { headers: this.headers, timeout: 8000 });
-        if (res.data) {
-            const thumbnail = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
-            return {
-                id: `yt_${videoId}`,
-                platform: 'youtube',
-                title: res.data.title || `YouTube Video (${videoId})`,
-                author: res.data.author_name || 'YouTube Creator',
-                thumbnail: thumbnail,
-                isVideo: true,
-                qualities: [
-                    { quality: '720p HD Video (MP4)', format: 'mp4', type: 'video', url: `https://www.youtube.com/watch?v=${videoId}`, label: 'HD Stream' },
-                    { quality: 'MP3 Audio Stream', format: 'mp3', type: 'audio', url: `https://www.youtube.com/watch?v=${videoId}`, label: 'Audio Stream' }
-                ]
-            };
+    async fetchViaEmbeddedPlayer(videoId, urlStr) {
+        let title = `YouTube Video (${videoId})`;
+        let author = 'YouTube Creator';
+
+        const playerUrl = 'https://www.youtube.com/youtubei/v1/player';
+        const payload = {
+            context: {
+                client: {
+                    clientName: 'TVHTML5_SIMPLY_EMBEDDED_PLAYER',
+                    clientVersion: '2.0'
+                }
+            },
+            videoId: videoId
+        };
+
+        const res = await axios.post(playerUrl, payload, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Content-Type': 'application/json'
+            },
+            timeout: 10000
+        });
+
+        if (res.data && res.data.streamingData) {
+            const formats = res.data.streamingData.formats || [];
+            const adaptiveFormats = res.data.streamingData.adaptiveFormats || [];
+            const allFormats = [...formats, ...adaptiveFormats];
+
+            const qualities = [];
+            const addedLabels = new Set();
+
+            allFormats.forEach(f => {
+                if (f.url) {
+                    const isAudio = f.mimeType && f.mimeType.includes('audio');
+                    let label = f.qualityLabel || '720p HD';
+
+                    if (isAudio) {
+                        label = 'MP3 Audio Stream (Original Track)';
+                    } else {
+                        label = `${label} (MP4)`;
+                    }
+
+                    if (!addedLabels.has(label)) {
+                        addedLabels.add(label);
+                        qualities.push({
+                            quality: label,
+                            format: isAudio ? 'mp3' : 'mp4',
+                            type: isAudio ? 'audio' : 'video',
+                            url: f.url,
+                            label: label
+                        });
+                    }
+                }
+            });
+
+            if (qualities.length > 0) {
+                return {
+                    id: `yt_${videoId}`,
+                    platform: 'youtube',
+                    title: title,
+                    author: author,
+                    thumbnail: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+                    isVideo: true,
+                    qualities: qualities
+                };
+            }
         }
         return null;
     }

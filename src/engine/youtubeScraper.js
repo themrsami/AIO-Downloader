@@ -6,6 +6,7 @@ class YouTubeScraper {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
             'Accept': 'application/json, text/plain, */*'
         };
+        this.visitorData = null;
     }
 
     extractVideoId(urlStr) {
@@ -15,41 +16,40 @@ class YouTubeScraper {
         return match ? match[1] : null;
     }
 
+    async getVisitorData() {
+        if (this.visitorData) return this.visitorData;
+        try {
+            const res = await axios.post('https://www.youtube.com/youtubei/v1/visitor_id', {
+                context: {
+                    client: {
+                        clientName: 'ANDROID_VR',
+                        clientVersion: '1.50.31'
+                    }
+                }
+            }, {
+                headers: { 'Content-Type': 'application/json' },
+                timeout: 6000
+            });
+            if (res.data && res.data.responseContext && res.data.responseContext.visitorData) {
+                this.visitorData = res.data.responseContext.visitorData;
+            }
+        } catch (e) {
+            console.log('Visitor Data fetch warning:', e.message);
+        }
+        return this.visitorData;
+    }
+
     async extract(urlStr) {
         const videoId = this.extractVideoId(urlStr);
         if (!videoId) {
             throw new Error('Invalid YouTube URL. Please enter a valid YouTube video or Shorts link.');
         }
 
-        let mediaData = null;
-
-        // Strategy 1: ANDROID_VR Client Stream Extractor
-        try {
-            mediaData = await this.fetchViaInnerTubeVr(videoId, urlStr);
-        } catch (e) {
-            console.log('YT Strategy 1 VR Error:', e.message);
-        }
-
-        // Strategy 2: TV / Web Embedded Player Stream Extractor
-        if (!mediaData || !mediaData.qualities || mediaData.qualities.length === 0) {
-            try {
-                mediaData = await this.fetchViaEmbeddedPlayer(videoId, urlStr);
-            } catch (e) {
-                console.log('YT Strategy 2 Embedded Error:', e.message);
-            }
-        }
-
-        if (!mediaData || !mediaData.qualities || mediaData.qualities.length === 0) {
-            throw new Error('Unable to extract direct stream from YouTube URL. This video may be age-restricted or music-licensed by YouTube.');
-        }
-
-        return mediaData;
-    }
-
-    async fetchViaInnerTubeVr(videoId, urlStr) {
+        const visitorData = await this.getVisitorData();
         let title = `YouTube Video (${videoId})`;
         let author = 'YouTube Creator';
 
+        // Fetch OEmbed metadata for clean title and author
         try {
             const oembedUrl = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`;
             const oembedRes = await axios.get(oembedUrl, { headers: this.headers, timeout: 6000 });
@@ -61,13 +61,17 @@ class YouTubeScraper {
 
         const thumbnail = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
 
+        // Direct InnerTube Stream Extractor with Visitor Session Authorization
         const playerUrl = 'https://www.youtube.com/youtubei/v1/player';
         const payload = {
             context: {
                 client: {
                     clientName: 'ANDROID_VR',
                     clientVersion: '1.50.31',
-                    androidSdkVersion: 32
+                    androidSdkVersion: 32,
+                    visitorData: visitorData,
+                    hl: 'en',
+                    gl: 'US'
                 }
             },
             videoId: videoId
@@ -76,7 +80,8 @@ class YouTubeScraper {
         const res = await axios.post(playerUrl, payload, {
             headers: {
                 'User-Agent': 'Dalvik/2.1.0 (Linux; U; Android 12; Quest 2 Build/SQ3A.220605.009.A1)',
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'X-Goog-Visitor-Id': visitorData || ''
             },
             timeout: 10000
         });
@@ -92,7 +97,7 @@ class YouTubeScraper {
             allFormats.forEach(f => {
                 if (f.url) {
                     const isAudio = f.mimeType && f.mimeType.includes('audio');
-                    let label = f.qualityLabel || '720p HD';
+                    let label = f.qualityLabel || f.quality || (isAudio ? 'Audio Stream' : '720p HD');
 
                     if (isAudio) {
                         label = 'MP3 Audio Stream (Original Track)';
@@ -131,77 +136,8 @@ class YouTubeScraper {
                 };
             }
         }
-        return null;
-    }
 
-    async fetchViaEmbeddedPlayer(videoId, urlStr) {
-        let title = `YouTube Video (${videoId})`;
-        let author = 'YouTube Creator';
-
-        const playerUrl = 'https://www.youtube.com/youtubei/v1/player';
-        const payload = {
-            context: {
-                client: {
-                    clientName: 'TVHTML5_SIMPLY_EMBEDDED_PLAYER',
-                    clientVersion: '2.0'
-                }
-            },
-            videoId: videoId
-        };
-
-        const res = await axios.post(playerUrl, payload, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                'Content-Type': 'application/json'
-            },
-            timeout: 10000
-        });
-
-        if (res.data && res.data.streamingData) {
-            const formats = res.data.streamingData.formats || [];
-            const adaptiveFormats = res.data.streamingData.adaptiveFormats || [];
-            const allFormats = [...formats, ...adaptiveFormats];
-
-            const qualities = [];
-            const addedLabels = new Set();
-
-            allFormats.forEach(f => {
-                if (f.url) {
-                    const isAudio = f.mimeType && f.mimeType.includes('audio');
-                    let label = f.qualityLabel || '720p HD';
-
-                    if (isAudio) {
-                        label = 'MP3 Audio Stream (Original Track)';
-                    } else {
-                        label = `${label} (MP4)`;
-                    }
-
-                    if (!addedLabels.has(label)) {
-                        addedLabels.add(label);
-                        qualities.push({
-                            quality: label,
-                            format: isAudio ? 'mp3' : 'mp4',
-                            type: isAudio ? 'audio' : 'video',
-                            url: f.url,
-                            label: label
-                        });
-                    }
-                }
-            });
-
-            if (qualities.length > 0) {
-                return {
-                    id: `yt_${videoId}`,
-                    platform: 'youtube',
-                    title: title,
-                    author: author,
-                    thumbnail: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
-                    isVideo: true,
-                    qualities: qualities
-                };
-            }
-        }
-        return null;
+        throw new Error('Unable to extract video streams from YouTube URL. Please verify the video is public.');
     }
 }
 

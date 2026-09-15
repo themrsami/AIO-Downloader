@@ -73,17 +73,25 @@ class ChunkDownloader {
         }
     }
 
+    getUaForUrl(urlStr) {
+        if (urlStr && urlStr.includes('googlevideo.com')) {
+            return 'Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15';
+        }
+        return 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36';
+    }
+
     async getFileInfo(urlStr) {
         return new Promise((resolve) => {
             try {
                 const parsedUrl = new URL(urlStr);
                 const protocol = parsedUrl.protocol === 'https:' ? https : http;
+                const ua = this.getUaForUrl(urlStr);
                 
                 // Use GET with Range: bytes=0-0 for 100% CDN compatibility (bypasses HEAD 405/403 blocks)
                 const req = protocol.request(parsedUrl, {
                     method: 'GET',
                     headers: {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+                        'User-Agent': ua,
                         'Range': 'bytes=0-0'
                     }
                 }, (res) => {
@@ -127,7 +135,7 @@ class ChunkDownloader {
                 url: state.url,
                 responseType: 'stream',
                 headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36'
+                    'User-Agent': this.getUaForUrl(state.url)
                 },
                 timeout: 30000
             });
@@ -244,7 +252,7 @@ class ChunkDownloader {
 
             const req = protocol.get(state.url, {
                 headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124.0.0.0',
+                    'User-Agent': this.getUaForUrl(state.url),
                     'Range': `bytes=${start}-${end}`
                 }
             }, (res) => {

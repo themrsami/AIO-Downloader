@@ -61,7 +61,7 @@ app.post('/api/extract', async (req, res) => {
     try {
         let mediaData = null;
 
-        if (cleanUrl.includes('youtube.com') || cleanUrl.includes('youtu.be')) {
+        if (cleanUrl.includes('youtube.com') || cleanUrl.includes('youtu.be') || cleanUrl.includes('youtube-nocookie.com') || youtubeScraper.extractVideoId(cleanUrl)) {
             mediaData = await youtubeScraper.extract(cleanUrl);
         } else if (cleanUrl.includes('instagram.com')) {
             mediaData = await instagramScraper.extract(cleanUrl);

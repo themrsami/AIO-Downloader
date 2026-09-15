@@ -272,10 +272,25 @@ function openQualityModal(media) {
     media.qualities.forEach((q, index) => {
         const item = document.createElement('div');
         item.className = `quality-option-item ${index === 0 ? 'selected' : ''}`;
+
+        let typeBadge = '';
+        if (q.isVideoOnly) {
+            typeBadge = '<span class="m3-chip" style="font-size: 11px; padding: 2px 7px; margin-left: 6px; background: rgba(255, 152, 0, 0.18); color: #FFA726; border-radius: 6px; font-weight: 600;">Video Only</span>';
+        } else if (q.hasAudio && q.hasVideo) {
+            typeBadge = '<span class="m3-chip" style="font-size: 11px; padding: 2px 7px; margin-left: 6px; background: rgba(76, 175, 80, 0.18); color: #66BB6A; border-radius: 6px; font-weight: 600;">Video + Audio</span>';
+        } else if (q.type === 'audio') {
+            typeBadge = '<span class="m3-chip" style="font-size: 11px; padding: 2px 7px; margin-left: 6px; background: rgba(33, 150, 243, 0.18); color: #42A5F5; border-radius: 6px; font-weight: 600;">Audio Track</span>';
+        }
+
         item.innerHTML = `
-            <div>
-                <div style="font-weight: 600; font-size: 14px;">${q.quality}</div>
-                <div style="font-size: 12px; color: var(--m3-color-on-surface-variant); margin-top: 2px;">Format: ${(q.format || 'MP4').toUpperCase()} | ${q.label || ''}</div>
+            <div style="flex: 1;">
+                <div style="font-weight: 600; font-size: 14px; display: flex; align-items: center; flex-wrap: wrap; gap: 4px;">
+                    <span>${q.quality}</span>
+                    ${typeBadge}
+                </div>
+                <div style="font-size: 12px; color: var(--m3-color-on-surface-variant); margin-top: 3px;">
+                    ${q.label || `Format: ${(q.format || 'MP4').toUpperCase()}`}
+                </div>
             </div>
             <span class="badge-quality">${(q.format || 'MP4').toUpperCase()}</span>
         `;

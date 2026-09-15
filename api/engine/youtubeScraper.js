@@ -303,7 +303,16 @@ class YouTubeScraper {
             throw new Error('This YouTube URL is an active ongoing live stream. Direct video downloading is available once the broadcast finishes and is processed as a standard video.');
         }
 
-        throw new Error('Unable to extract video streams from YouTube URL. Please verify the video is public.');
+        const diag = playerResults.map((r, i) => ({
+            name: clientConfigs[i]?.name,
+            status: r.status,
+            playability: r.status === 'fulfilled' ? (r.value.data?.playabilityStatus?.status || 'no_data') : (r.reason?.message || 'err'),
+            reason: r.status === 'fulfilled' ? r.value.data?.playabilityStatus?.reason : undefined,
+            formats: r.status === 'fulfilled' ? (r.value.data?.streamingData?.formats?.length || 0) : -1,
+            adaptive: r.status === 'fulfilled' ? (r.value.data?.streamingData?.adaptiveFormats?.length || 0) : -1
+        }));
+
+        throw new Error(`Unable to extract video streams from YouTube URL. [Diagnostics: ${JSON.stringify(diag)}]`);
     }
 }
 

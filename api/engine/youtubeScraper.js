@@ -192,10 +192,21 @@ class YouTubeScraper {
             }
         }
 
-        // Add progressive formats from Android client
-        if (androidResult.status === 'fulfilled' && androidResult.value.data?.streamingData) {
-            const aData = androidResult.value.data.streamingData;
-            if (aData.formats) rawFormats.push(...aData.formats);
+        // Add progressive & adaptive formats and metadata from Android client
+        if (androidResult.status === 'fulfilled' && androidResult.value.data) {
+            const aData = androidResult.value.data;
+            if (aData.videoDetails) {
+                title = aData.videoDetails.title || title;
+                author = aData.videoDetails.author || author;
+                if (aData.videoDetails.thumbnail && aData.videoDetails.thumbnail.thumbnails?.length) {
+                    const thumbs = aData.videoDetails.thumbnail.thumbnails;
+                    thumbnail = thumbs[thumbs.length - 1].url || thumbnail;
+                }
+            }
+            if (aData.streamingData) {
+                if (aData.streamingData.formats) rawFormats.push(...aData.streamingData.formats);
+                if (aData.streamingData.adaptiveFormats) rawFormats.push(...aData.streamingData.adaptiveFormats);
+            }
         }
 
         // 4. Organize, deduplicate, and annotate stream formats
@@ -302,7 +313,15 @@ class YouTubeScraper {
             throw new Error('This YouTube URL is an active ongoing live stream. Direct video downloading is available once the broadcast finishes and is processed as a standard video.');
         }
 
-        throw new Error('Unable to extract video streams from YouTube URL. Please verify the video is public.');
+        const diag = {
+            visionStatus: visionResult.status === 'fulfilled' ? (visionResult.value.data?.playabilityStatus?.status || 'no_data') : (visionResult.reason?.message || 'err'),
+            androidStatus: androidResult.status === 'fulfilled' ? (androidResult.value.data?.playabilityStatus?.status || 'no_data') : (androidResult.reason?.message || 'err'),
+            androidFormats: androidResult.status === 'fulfilled' ? (androidResult.value.data?.streamingData?.formats?.length || 0) : -1,
+            androidAdaptive: androidResult.status === 'fulfilled' ? (androidResult.value.data?.streamingData?.adaptiveFormats?.length || 0) : -1,
+            visitor: Boolean(visitorData)
+        };
+
+        throw new Error(`Unable to extract video streams from YouTube URL. [Diagnostics: ${JSON.stringify(diag)}]`);
     }
 }
 

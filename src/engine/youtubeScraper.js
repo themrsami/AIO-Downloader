@@ -2,12 +2,10 @@ const axios = require('axios');
 
 class YouTubeScraper {
     constructor() {
-        this.headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
-            'Accept': 'application/json, text/plain, */*'
-        };
+        this.desktopUA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36';
+        this.iosUA = 'com.google.ios.youtube/20.11.6 (iPhone10,4; U; CPU iOS 16_7_7 like Mac OS X)';
+        this.androidUA = 'com.google.android.youtube/21.03.36 (Linux; U; Android 14; SM-S908E Build/TP1A.220624.014) gzip';
         this.visionOsUA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15';
-        this.androidUA = 'com.google.android.youtube/21.26.364 (Linux; U; Android 11) gzip';
     }
 
     /**
@@ -49,30 +47,6 @@ class YouTubeScraper {
     }
 
     /**
-     * Obtains a fresh Visitor Data authorization token from YouTube
-     */
-    async getFreshVisitorData() {
-        try {
-            const res = await axios.post('https://www.youtube.com/youtubei/v1/visitor_id', {
-                context: {
-                    client: {
-                        clientName: 'ANDROID_VR',
-                        clientVersion: '1.65.10'
-                    }
-                }
-            }, {
-                headers: { 'Content-Type': 'application/json' },
-                timeout: 6000
-            });
-            if (res.data && res.data.responseContext && res.data.responseContext.visitorData) {
-                return res.data.responseContext.visitorData;
-            }
-        } catch (e) {
-            console.log('Visitor Data fetch warning:', e.message);
-        }
-        return null;
-    }
-
     /**
      * Formats bytes into clean human-readable size
      */
@@ -87,7 +61,8 @@ class YouTubeScraper {
     }
 
     /**
-     * Primary fast extractor combining VisionOS and Android clients
+     * Ultra-fast multi-client native YouTube extractor
+     * Queries iOS, Android, and VisionOS InnerTube clients in parallel
      */
     async extract(urlStr) {
         const videoId = this.extractVideoId(urlStr);
@@ -95,117 +70,134 @@ class YouTubeScraper {
             throw new Error('Invalid YouTube URL. Please enter a valid YouTube video, Shorts, or Live link.');
         }
 
-        const visitorData = await this.getFreshVisitorData();
         let title = `YouTube Video (${videoId})`;
         let author = 'YouTube Creator';
         let thumbnail = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
 
-        // 1. Fetch OEmbed metadata for clean title and author
-        try {
-            const oembedUrl = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`;
-            const oembedRes = await axios.get(oembedUrl, { headers: this.headers, timeout: 5000 });
-            if (oembedRes.data) {
-                title = oembedRes.data.title || title;
-                author = oembedRes.data.author_name || author;
-                if (oembedRes.data.thumbnail_url) {
-                    thumbnail = oembedRes.data.thumbnail_url;
-                }
-            }
-        } catch (e) {}
-
         const playerUrl = 'https://www.youtube.com/youtubei/v1/player';
 
-        // 2. Query VISIONOS client (delivers 100% direct streaming URLs without bot challenges or cipher)
-        const visionPayload = {
-            context: {
-                client: {
-                    clientName: 'VISIONOS',
-                    clientVersion: '1.02',
-                    deviceMake: 'Apple',
-                    deviceModel: 'RealityDevice17,1',
-                    osName: 'visionOS',
-                    osVersion: '26.5.23O471',
-                    hl: 'en',
-                    gl: 'US',
-                    visitorData: visitorData
-                }
-            },
-            videoId: videoId
-        };
-
-        // 3. Query ANDROID client in parallel (provides pre-merged progressive video+audio formats)
-        const androidPayload = {
-            context: {
-                client: {
-                    clientName: 'ANDROID',
-                    clientVersion: '21.26.364',
-                    androidSdkVersion: 30,
-                    osName: 'Android',
-                    osVersion: '11',
-                    hl: 'en',
-                    gl: 'US',
-                    visitorData: visitorData
-                }
-            },
-            videoId: videoId
-        };
-
-        const [visionResult, androidResult] = await Promise.allSettled([
-            axios.post(playerUrl, visionPayload, {
-                headers: {
-                    'User-Agent': this.visionOsUA,
-                    'Content-Type': 'application/json',
-                    'X-Goog-Visitor-Id': visitorData || '',
-                    'X-YouTube-Client-Name': '101',
-                    'X-YouTube-Client-Version': '1.02'
+        const clientConfigs = [
+            // 1. iOS App client profile (Apple trusted client, direct non-ciphered DASH & progressive streams)
+            {
+                name: 'ios',
+                payload: {
+                    context: {
+                        client: {
+                            clientName: 'IOS',
+                            clientVersion: '20.11.6',
+                            deviceModel: 'iPhone10,4',
+                            osName: 'iOS',
+                            osVersion: '16.7.7.20H330',
+                            hl: 'en',
+                            gl: 'US'
+                        }
+                    },
+                    videoId: videoId
                 },
-                timeout: 8000
-            }),
-            axios.post(playerUrl, androidPayload, {
+                headers: {
+                    'User-Agent': this.iosUA,
+                    'Content-Type': 'application/json'
+                }
+            },
+            // 2. Android App client profile (pre-merged progressive streams + adaptive DASH)
+            {
+                name: 'android',
+                payload: {
+                    context: {
+                        client: {
+                            clientName: 'ANDROID',
+                            clientVersion: '21.03.36',
+                            androidSdkVersion: 34,
+                            osName: 'Android',
+                            osVersion: '14',
+                            hl: 'en',
+                            gl: 'US'
+                        }
+                    },
+                    videoId: videoId
+                },
                 headers: {
                     'User-Agent': this.androidUA,
-                    'Content-Type': 'application/json',
-                    'X-Goog-Visitor-Id': visitorData || '',
-                    'X-YouTube-Client-Name': '3',
-                    'X-YouTube-Client-Version': '21.26.364'
+                    'Content-Type': 'application/json'
+                }
+            },
+            // 3. VisionOS client profile (high resolution 4K/2K/1080p UHD DASH streams)
+            {
+                name: 'vision',
+                payload: {
+                    context: {
+                        client: {
+                            clientName: 'VISIONOS',
+                            clientVersion: '1.02',
+                            deviceMake: 'Apple',
+                            deviceModel: 'RealityDevice17,1',
+                            osName: 'visionOS',
+                            osVersion: '26.5.23O471',
+                            hl: 'en',
+                            gl: 'US'
+                        }
+                    },
+                    videoId: videoId
                 },
-                timeout: 8000
-            })
-        ]);
-
-        const rawFormats = [];
-
-        // Check metadata from player responses if available
-        if (visionResult.status === 'fulfilled' && visionResult.value.data) {
-            const vData = visionResult.value.data;
-            if (vData.videoDetails) {
-                title = vData.videoDetails.title || title;
-                author = vData.videoDetails.author || author;
-                if (vData.videoDetails.thumbnail && vData.videoDetails.thumbnail.thumbnails?.length) {
-                    const thumbs = vData.videoDetails.thumbnail.thumbnails;
-                    thumbnail = thumbs[thumbs.length - 1].url || thumbnail;
+                headers: {
+                    'User-Agent': this.visionOsUA,
+                    'Content-Type': 'application/json'
                 }
             }
-            if (vData.streamingData) {
-                if (vData.streamingData.formats) rawFormats.push(...vData.streamingData.formats);
-                if (vData.streamingData.adaptiveFormats) rawFormats.push(...vData.streamingData.adaptiveFormats);
+        ];
+
+        // Execute OEmbed and all InnerTube player calls in parallel for instantaneous resolution
+        const [oembedResult, ...playerResults] = await Promise.allSettled([
+            axios.get(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`, {
+                headers: { 'User-Agent': this.desktopUA },
+                timeout: 4000
+            }),
+            ...clientConfigs.map(c => 
+                axios.post(playerUrl, c.payload, {
+                    headers: c.headers,
+                    timeout: 7000
+                })
+            )
+        ]);
+
+        // Process OEmbed metadata
+        if (oembedResult.status === 'fulfilled' && oembedResult.value.data) {
+            const od = oembedResult.value.data;
+            title = od.title || title;
+            author = od.author_name || author;
+            if (od.thumbnail_url) {
+                thumbnail = od.thumbnail_url;
             }
         }
 
-        // Add progressive & adaptive formats and metadata from Android client
-        if (androidResult.status === 'fulfilled' && androidResult.value.data) {
-            const aData = androidResult.value.data;
-            if (aData.videoDetails) {
-                title = aData.videoDetails.title || title;
-                author = aData.videoDetails.author || author;
-                if (aData.videoDetails.thumbnail && aData.videoDetails.thumbnail.thumbnails?.length) {
-                    const thumbs = aData.videoDetails.thumbnail.thumbnails;
-                    thumbnail = thumbs[thumbs.length - 1].url || thumbnail;
+        const rawFormats = [];
+        this.lastLiveCheck = false;
+
+        // Process all fulfilled player responses
+        for (const res of playerResults) {
+            if (res.status === 'fulfilled' && res.value.data) {
+                const data = res.value.data;
+
+                if (data.videoDetails) {
+                    if (data.videoDetails.isLiveContent) {
+                        this.lastLiveCheck = true;
+                    }
+                    if (data.videoDetails.title) title = data.videoDetails.title;
+                    if (data.videoDetails.author) author = data.videoDetails.author;
+                    if (data.videoDetails.thumbnail && data.videoDetails.thumbnail.thumbnails?.length) {
+                        const thumbs = data.videoDetails.thumbnail.thumbnails;
+                        thumbnail = thumbs[thumbs.length - 1].url || thumbnail;
+                    }
                 }
-            }
-            if (aData.streamingData) {
-                if (aData.streamingData.formats) rawFormats.push(...aData.streamingData.formats);
-                if (aData.streamingData.adaptiveFormats) rawFormats.push(...aData.streamingData.adaptiveFormats);
+
+                if (data.streamingData) {
+                    if (Array.isArray(data.streamingData.formats)) {
+                        rawFormats.push(...data.streamingData.formats);
+                    }
+                    if (Array.isArray(data.streamingData.adaptiveFormats)) {
+                        rawFormats.push(...data.streamingData.adaptiveFormats);
+                    }
+                }
             }
         }
 
@@ -307,21 +299,11 @@ class YouTubeScraper {
             };
         }
 
-        const isLiveBroadcast = (visionResult.status === 'fulfilled' && visionResult.value.data?.videoDetails?.isLiveContent) ||
-                               (androidResult.status === 'fulfilled' && androidResult.value.data?.videoDetails?.isLiveContent);
-        if (isLiveBroadcast) {
+        if (this.lastLiveCheck) {
             throw new Error('This YouTube URL is an active ongoing live stream. Direct video downloading is available once the broadcast finishes and is processed as a standard video.');
         }
 
-        const diag = {
-            visionStatus: visionResult.status === 'fulfilled' ? (visionResult.value.data?.playabilityStatus?.status || 'no_data') : (visionResult.reason?.message || 'err'),
-            androidStatus: androidResult.status === 'fulfilled' ? (androidResult.value.data?.playabilityStatus?.status || 'no_data') : (androidResult.reason?.message || 'err'),
-            androidFormats: androidResult.status === 'fulfilled' ? (androidResult.value.data?.streamingData?.formats?.length || 0) : -1,
-            androidAdaptive: androidResult.status === 'fulfilled' ? (androidResult.value.data?.streamingData?.adaptiveFormats?.length || 0) : -1,
-            visitor: Boolean(visitorData)
-        };
-
-        throw new Error(`Unable to extract video streams from YouTube URL. [Diagnostics: ${JSON.stringify(diag)}]`);
+        throw new Error('Unable to extract video streams from YouTube URL. Please verify the video is public.');
     }
 }
 

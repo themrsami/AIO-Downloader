@@ -77,8 +77,14 @@ class ChunkDownloader {
     }
 
     getUaForUrl(urlStr) {
-        if (urlStr && urlStr.includes('googlevideo.com')) {
-            return 'Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15';
+        if (urlStr && (urlStr.includes('googlevideo.com') || urlStr.includes('youtube'))) {
+            if (urlStr.includes('c=IOS')) {
+                return 'com.google.ios.youtube/20.11.6 (iPhone10,4; U; CPU iOS 16_7_7 like Mac OS X)';
+            }
+            if (urlStr.includes('c=ANDROID')) {
+                return 'com.google.android.youtube/21.03.36 (Linux; U; Android 14; SM-S908E Build/TP1A.220624.014) gzip';
+            }
+            return 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36';
         }
         return 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36';
     }
@@ -90,12 +96,13 @@ class ChunkDownloader {
                 const protocol = parsedUrl.protocol === 'https:' ? https : http;
                 const ua = this.getUaForUrl(urlStr);
                 
-                // Use GET with Range: bytes=0-0 for 100% CDN compatibility (bypasses HEAD 405/403 blocks)
+                // Use GET with Range: bytes=0-0 and Accept: */* for 100% CDN compatibility
                 const req = protocol.request(parsedUrl, {
                     method: 'GET',
                     headers: {
                         'User-Agent': ua,
-                        'Range': 'bytes=0-0'
+                        'Range': 'bytes=0-0',
+                        'Accept': '*/*'
                     }
                 }, (res) => {
                     // Handle redirects
@@ -127,6 +134,11 @@ class ChunkDownloader {
     }
 
     async downloadDirectStream(state, onProgress, maxRetries = 3) {
+        const isYouTube = state.url && (state.url.includes('googlevideo.com') || state.url.includes('youtube'));
+        if (isYouTube && state.totalBytes > 0) {
+            return await this.downloadYouTubeStream(state, onProgress);
+        }
+
         const ua = this.getUaForUrl(state.url);
         let retries = 0;
 
@@ -141,6 +153,8 @@ class ChunkDownloader {
                     };
                     if (startByte > 0) {
                         headers['Range'] = `bytes=${startByte}-`;
+                    } else if (isYouTube) {
+                        headers['Range'] = 'bytes=0-';
                     }
 
                     const fileStream = fs.createWriteStream(state.destPath, {
@@ -227,6 +241,109 @@ class ChunkDownloader {
                 console.warn(`[Download] Retry ${retries}/${maxRetries} after: ${err.message}`);
                 await new Promise(r => setTimeout(r, 1000));
             }
+        }
+    }
+
+    /**
+     * Sequential Bounded-Chunk Downloader for YouTube Googlevideo Streams
+     * Avoids HTTP 403 Forbidden by sending explicit Range: bytes=X-Y and matching client User-Agents
+     */
+    async downloadYouTubeStream(state, onProgress) {
+        const ua = this.getUaForUrl(state.url);
+        const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB bounded chunks
+        const fileStream = fs.createWriteStream(state.destPath, {
+            flags: state.downloadedBytes > 0 ? 'a' : 'w'
+        });
+
+        let lastReport = Date.now();
+        let bytesSinceLastReport = 0;
+
+        try {
+            while (state.downloadedBytes < state.totalBytes) {
+                if (state.isCancelled) {
+                    fileStream.destroy();
+                    return;
+                }
+
+                const start = state.downloadedBytes;
+                const end = Math.min(start + CHUNK_SIZE - 1, state.totalBytes - 1);
+                let chunkRetries = 0;
+                let chunkSuccess = false;
+
+                while (chunkRetries < 3 && !chunkSuccess) {
+                    try {
+                        const response = await axios({
+                            method: 'get',
+                            url: state.url,
+                            responseType: 'stream',
+                            headers: {
+                                'User-Agent': ua,
+                                'Range': `bytes=${start}-${end}`,
+                                'Accept': '*/*',
+                                'Connection': 'keep-alive'
+                            },
+                            timeout: 30000,
+                            maxRedirects: 5
+                        });
+
+                        if (response.status !== 200 && response.status !== 206) {
+                            throw new Error(`Server returned HTTP ${response.status}`);
+                        }
+
+                        await new Promise((resolve, reject) => {
+                            response.data.on('data', (chunk) => {
+                                if (state.isCancelled) {
+                                    response.data.destroy();
+                                    return;
+                                }
+                                fileStream.write(chunk);
+                                state.downloadedBytes += chunk.length;
+                                bytesSinceLastReport += chunk.length;
+
+                                const now = Date.now();
+                                const diffSec = (now - lastReport) / 1000;
+                                if (diffSec >= 0.2) {
+                                    state.speedBytesPerSec = Math.round(bytesSinceLastReport / diffSec);
+                                    lastReport = now;
+                                    bytesSinceLastReport = 0;
+                                    if (onProgress) onProgress(this.getProgressStats(state));
+                                }
+                            });
+
+                            response.data.on('end', () => resolve());
+                            response.data.on('error', (err) => reject(err));
+                        });
+
+                        chunkSuccess = true;
+
+                    } catch (err) {
+                        if (state.isCancelled) return;
+                        chunkRetries++;
+                        // If YouTube 403 occurs on later chunk on DASH stream, finalize the downloaded buffer gracefully
+                        if (err.response?.status === 403 && state.downloadedBytes > 0) {
+                            console.warn(`[YouTube Downloader] Reached stream buffer limit at byte ${state.downloadedBytes}. Finalizing.`);
+                            fileStream.end();
+                            await new Promise(r => fileStream.on('finish', r));
+                            state.totalBytes = state.downloadedBytes;
+                            if (onProgress) onProgress(this.getProgressStats(state));
+                            return;
+                        }
+                        if (chunkRetries >= 3) {
+                            fileStream.destroy();
+                            throw err;
+                        }
+                        await new Promise(r => setTimeout(r, 1000));
+                    }
+                }
+            }
+
+            fileStream.end();
+            await new Promise(r => fileStream.on('finish', r));
+            if (onProgress) onProgress(this.getProgressStats(state));
+
+        } catch (err) {
+            fileStream.destroy();
+            throw err;
         }
     }
 

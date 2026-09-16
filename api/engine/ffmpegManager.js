@@ -228,6 +228,54 @@ class FFmpegManager {
             });
         });
     }
+
+    /**
+     * Instant lossless audio extraction from progressive MP4
+     * Uses stream-copy (-vn -c:a copy) in < 1s with zero re-encoding
+     */
+    async extractAudio(videoPath, outputPath, onProgress) {
+        const status = await this.detect();
+        if (!status.available) {
+            throw new Error('FFmpeg is not installed. Please install FFmpeg to extract audio.');
+        }
+
+        const ffmpegBin = status.path;
+
+        return new Promise((resolve, reject) => {
+            const args = [
+                '-y',
+                '-i', videoPath,
+                '-vn',
+                '-c:a', 'copy',
+                outputPath
+            ];
+
+            const proc = spawn(ffmpegBin, args);
+            let stderrOutput = '';
+
+            proc.stderr.on('data', (data) => {
+                stderrOutput += data.toString();
+                if (onProgress) {
+                    onProgress({ status: 'Extracting audio stream...' });
+                }
+            });
+
+            proc.on('close', (code) => {
+                if (code === 0 && fs.existsSync(outputPath)) {
+                    try {
+                        if (fs.existsSync(videoPath)) fs.unlinkSync(videoPath);
+                    } catch (e) {}
+                    resolve(outputPath);
+                } else {
+                    reject(new Error(`FFmpeg audio extraction failed with code ${code}: ${stderrOutput.slice(-300)}`));
+                }
+            });
+
+            proc.on('error', (err) => {
+                reject(new Error(`Failed to start FFmpeg: ${err.message}`));
+            });
+        });
+    }
 }
 
 module.exports = new FFmpegManager();

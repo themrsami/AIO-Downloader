@@ -143,12 +143,15 @@ app.post('/api/download', async (req, res) => {
     let targetFormat = 'mp4';
     let targetThumb = '';
 
+    let isAudioExtract = false;
+
     if (media && media.qualities) {
         const idx = selectedQualityIndex || 0;
         const q = media.qualities[idx] || media.qualities[0];
         targetUrl = q.url;
         targetAudioUrl = q.audioUrl || null;
         requiresMuxing = Boolean(q.requiresMuxing && targetAudioUrl);
+        isAudioExtract = Boolean(q.isAudioExtract || q.type === 'audio' || targetFormat === 'm4a');
         targetTitle = media.title;
         targetPlatform = media.platform;
         targetQuality = q.quality;
@@ -179,7 +182,7 @@ app.post('/api/download', async (req, res) => {
         etaFormatted: 'Starting...',
         filePath: targetFilePath,
         saveFileName: saveFileName,
-        isMuxed: requiresMuxing
+        isMuxed: requiresMuxing || isAudioExtract
     };
 
     downloadsStore.unshift(record);
@@ -266,8 +269,63 @@ app.post('/api/download', async (req, res) => {
                 });
             });
 
+        } else if (isAudioExtract) {
+            // Pure Audio Extraction directly from progressive stream via FFmpeg
+            const tempSourcePath = path.join(currentDownloadFolder, `temp_${taskId}_source.mp4`);
+            record.status = 'downloading';
+            record.etaFormatted = 'Downloading audio stream...';
+
+            await chunkDownloader.downloadParallel(targetUrl, tempSourcePath, (progress) => {
+                record.percent = Math.round(progress.percent * 0.90);
+                record.speedFormatted = progress.speedFormatted;
+                record.etaFormatted = `Audio: ${progress.percent}% • ${progress.etaFormatted}`;
+
+                broadcastWS({
+                    type: 'download_progress',
+                    taskId,
+                    data: {
+                        id: taskId,
+                        percent: record.percent,
+                        speedFormatted: progress.speedFormatted,
+                        etaFormatted: record.etaFormatted,
+                        status: 'downloading'
+                    }
+                });
+            });
+
+            record.status = 'muxing';
+            record.percent = 95;
+            record.speedFormatted = 'Extracting Audio';
+            record.etaFormatted = 'Extracting lossless audio track with FFmpeg...';
+
+            broadcastWS({
+                type: 'download_progress',
+                taskId,
+                data: {
+                    id: taskId,
+                    percent: 95,
+                    speedFormatted: 'Extracting Audio',
+                    etaFormatted: 'Extracting lossless audio track with FFmpeg...',
+                    status: 'muxing'
+                }
+            });
+
+            await ffmpegManager.extractAudio(tempSourcePath, targetFilePath, (extractProgress) => {
+                broadcastWS({
+                    type: 'download_progress',
+                    taskId,
+                    data: {
+                        id: taskId,
+                        percent: 98,
+                        speedFormatted: 'Extracting Audio',
+                        etaFormatted: extractProgress.status || 'Extracting...',
+                        status: 'muxing'
+                    }
+                });
+            });
+
         } else {
-            // Standard single stream download (progressive MP4 or audio only)
+            // Standard single stream download (progressive MP4 or single stream)
             await chunkDownloader.downloadParallel(targetUrl, targetFilePath, (progress) => {
                 record.percent = progress.percent;
                 record.speedFormatted = progress.speedFormatted;

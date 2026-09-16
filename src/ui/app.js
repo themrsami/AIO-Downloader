@@ -289,14 +289,16 @@ function openQualityModal(media) {
         item.className = `quality-option-item ${index === 0 ? 'selected' : ''}`;
 
         let typeBadge = '';
-        if (q.requiresMuxing) {
-            typeBadge = '<span class="m3-chip" style="font-size: 11px; padding: 2px 8px; margin-left: 6px; background: rgba(16, 185, 129, 0.2); color: #10B981; border: 1px solid rgba(16, 185, 129, 0.35); border-radius: 6px; font-weight: 700; display: inline-flex; align-items: center; gap: 4px;"><i data-lucide="sparkles" style="width: 12px; height: 12px;"></i>Video + Audio (FFmpeg Merged)</span>';
+        if (q.itag === 18 && q.type === 'video') {
+            typeBadge = '<span class="m3-chip" style="font-size: 11px; padding: 2px 8px; margin-left: 6px; background: rgba(16, 185, 129, 0.2); color: #10B981; border: 1px solid rgba(16, 185, 129, 0.35); border-radius: 6px; font-weight: 700; display: inline-flex; align-items: center; gap: 4px;"><i data-lucide="check-circle-2" style="width: 12px; height: 12px;"></i>Recommended (Fast & Complete)</span>';
+        } else if (q.isAudioExtract || q.type === 'audio') {
+            typeBadge = '<span class="m3-chip" style="font-size: 11px; padding: 2px 8px; margin-left: 6px; background: rgba(168, 85, 247, 0.2); color: #C084FC; border: 1px solid rgba(168, 85, 247, 0.35); border-radius: 6px; font-weight: 700; display: inline-flex; align-items: center; gap: 4px;"><i data-lucide="music" style="width: 12px; height: 12px;"></i>Pure Audio Track</span>';
+        } else if (q.requiresMuxing) {
+            typeBadge = '<span class="m3-chip" style="font-size: 11px; padding: 2px 8px; margin-left: 6px; background: rgba(59, 130, 246, 0.2); color: #60A5FA; border: 1px solid rgba(59, 130, 246, 0.35); border-radius: 6px; font-weight: 700; display: inline-flex; align-items: center; gap: 4px;"><i data-lucide="sparkles" style="width: 12px; height: 12px;"></i>HD Video + Audio</span>';
         } else if (q.isVideoOnly) {
             typeBadge = '<span class="m3-chip" style="font-size: 11px; padding: 2px 8px; margin-left: 6px; background: rgba(245, 158, 11, 0.2); color: #F59E0B; border: 1px solid rgba(245, 158, 11, 0.35); border-radius: 6px; font-weight: 600;">Video Only</span>';
         } else if (q.hasAudio && q.hasVideo) {
             typeBadge = '<span class="m3-chip" style="font-size: 11px; padding: 2px 8px; margin-left: 6px; background: rgba(59, 130, 246, 0.2); color: #60A5FA; border: 1px solid rgba(59, 130, 246, 0.35); border-radius: 6px; font-weight: 600;">Standard (Video + Audio)</span>';
-        } else if (q.type === 'audio') {
-            typeBadge = '<span class="m3-chip" style="font-size: 11px; padding: 2px 8px; margin-left: 6px; background: rgba(168, 85, 247, 0.2); color: #C084FC; border: 1px solid rgba(168, 85, 247, 0.35); border-radius: 6px; font-weight: 600;">Audio Track</span>';
         }
 
         item.innerHTML = `

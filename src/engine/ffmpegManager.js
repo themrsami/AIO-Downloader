@@ -5,8 +5,15 @@ const axios = require('axios');
 
 class FFmpegManager {
     constructor() {
-        this.localBinDir = path.resolve(__dirname, '../../bin');
+        const appData = process.env.APPDATA || (process.platform === 'darwin' ? path.join(process.env.HOME || '', 'Library', 'Application Support') : path.join(process.env.HOME || '', '.config'));
+        this.userDataBinDir = path.join(appData, 'aio-youtube-downloader', 'bin');
+        this.devBinDir = path.resolve(__dirname, '../../bin');
+
+        // Target directory for downloads is userDataBinDir (guaranteed writable in packaged .exe)
+        this.localBinDir = this.userDataBinDir;
         this.localFfmpegPath = path.join(this.localBinDir, process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg');
+        this.devFfmpegPath = path.join(this.devBinDir, process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg');
+
         this.cachedStatus = null;
         this.isInstalling = false;
     }
@@ -19,20 +26,29 @@ class FFmpegManager {
             return this.cachedStatus;
         }
 
-        // 1. Check local bin directory inside the application
-        if (fs.existsSync(this.localFfmpegPath)) {
-            try {
-                const versionOutput = execSync(`"${this.localFfmpegPath}" -version`, { encoding: 'utf8', timeout: 3000 });
-                const firstLine = versionOutput.split('\n')[0] || '';
-                const match = firstLine.match(/ffmpeg\s+version\s+([^\s]+)/i);
-                this.cachedStatus = {
-                    available: true,
-                    isLocal: true,
-                    path: this.localFfmpegPath,
-                    version: match ? match[1] : 'Installed'
-                };
-                return this.cachedStatus;
-            } catch (e) {}
+        // 1. Check local bin directories (userData, dev, alongside .exe)
+        const candidatePaths = [
+            this.localFfmpegPath,
+            this.devFfmpegPath,
+            process.execPath ? path.join(path.dirname(process.execPath), 'bin', process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg') : null,
+            process.execPath ? path.join(path.dirname(process.execPath), process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg') : null
+        ].filter(Boolean);
+
+        for (const binPath of candidatePaths) {
+            if (fs.existsSync(binPath)) {
+                try {
+                    const versionOutput = execSync(`"${binPath}" -version`, { encoding: 'utf8', timeout: 3000 });
+                    const firstLine = versionOutput.split('\n')[0] || '';
+                    const match = firstLine.match(/ffmpeg\s+version\s+([^\s]+)/i);
+                    this.cachedStatus = {
+                        available: true,
+                        isLocal: true,
+                        path: binPath,
+                        version: match ? match[1] : 'Installed'
+                    };
+                    return this.cachedStatus;
+                } catch (e) {}
+            }
         }
 
         // 2. Check system PATH

@@ -1,15 +1,16 @@
-const { app, BrowserWindow, shell, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, shell } = require('electron');
 const path = require('path');
-const { spawn } = require('child_process');
 
 let mainWindow;
-let serverProcess;
 
-function startServer() {
-    const serverScript = path.join(__dirname, 'src', 'server', 'appServer.js');
-    serverProcess = spawn('node', [serverScript], {
-        stdio: 'inherit'
-    });
+// Initialize the Express & WebSocket server directly inside Electron's Node runtime
+// This ensures the packaged .exe works on any PC without requiring Node.js to be installed!
+function initServer() {
+    try {
+        require(path.join(__dirname, 'src', 'server', 'appServer.js'));
+    } catch (e) {
+        console.error('Server init error:', e);
+    }
 }
 
 function createWindow() {
@@ -31,7 +32,7 @@ function createWindow() {
     mainWindow.webContents.on('did-fail-load', () => {
         setTimeout(() => {
             if (mainWindow) mainWindow.loadURL('http://localhost:38920');
-        }, 600);
+        }, 500);
     });
 
     mainWindow.loadURL('http://localhost:38920');
@@ -48,10 +49,8 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
-    startServer();
-    setTimeout(() => {
-        createWindow();
-    }, 1200);
+    initServer();
+    createWindow();
 
     app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -59,6 +58,5 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
-    if (serverProcess) serverProcess.kill();
     if (process.platform !== 'darwin') app.quit();
 });

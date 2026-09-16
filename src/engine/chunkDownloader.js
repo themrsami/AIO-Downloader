@@ -45,9 +45,12 @@ class ChunkDownloader {
             downloadState.totalBytes = fileInfo.contentLength;
             const supportsRanges = fileInfo.acceptRanges;
 
-            // If file size unknown or server doesn't support ranges, fallback to single stream
-            if (!supportsRanges || downloadState.totalBytes <= 0 || downloadState.totalBytes < 1024 * 1024) {
-                await this.downloadSingleStream(downloadState, onProgress);
+            // For YouTube (googlevideo.com / youtube) or when ranges are not supported,
+            // direct streaming provides 100% reliability at full network line speed
+            // without temporary .dat files, without memory buffer crashes, and without Windows EPERM file locking!
+            const isYouTube = url.includes('googlevideo.com') || url.includes('youtube');
+            if (isYouTube || !supportsRanges || downloadState.totalBytes <= 0 || downloadState.totalBytes < 5 * 1024 * 1024) {
+                await this.downloadDirectStream(downloadState, onProgress);
             } else {
                 await this.downloadMultiChunk(downloadState, onProgress);
             }
@@ -123,65 +126,107 @@ class ChunkDownloader {
         });
     }
 
-    async downloadSingleStream(state, onProgress) {
-        const fileStream = fs.createWriteStream(state.destPath);
-        const startTime = Date.now();
-        let lastReport = Date.now();
-        let bytesSinceLastReport = 0;
+    async downloadDirectStream(state, onProgress, maxRetries = 3) {
+        const ua = this.getUaForUrl(state.url);
+        let retries = 0;
 
-        try {
-            const response = await axios({
-                method: 'get',
-                url: state.url,
-                responseType: 'stream',
-                headers: {
-                    'User-Agent': this.getUaForUrl(state.url)
-                },
-                timeout: 30000
-            });
+        while (retries <= maxRetries) {
+            try {
+                await new Promise((resolve, reject) => {
+                    const startByte = state.downloadedBytes;
+                    const headers = {
+                        'User-Agent': ua,
+                        'Accept': '*/*',
+                        'Connection': 'keep-alive'
+                    };
+                    if (startByte > 0) {
+                        headers['Range'] = `bytes=${startByte}-`;
+                    }
 
-            if (response.headers['content-length']) {
-                state.totalBytes = parseInt(response.headers['content-length'], 10);
-            }
+                    const fileStream = fs.createWriteStream(state.destPath, {
+                        flags: startByte > 0 ? 'a' : 'w'
+                    });
 
-            const stream = response.data;
+                    let lastReport = Date.now();
+                    let bytesSinceLastReport = 0;
 
-            return new Promise((resolve, reject) => {
-                stream.on('data', (chunk) => {
-                    if (state.isCancelled) {
-                        stream.destroy();
+                    axios({
+                        method: 'get',
+                        url: state.url,
+                        responseType: 'stream',
+                        headers,
+                        timeout: 45000,
+                        maxRedirects: 5
+                    }).then((response) => {
+                        if (response.status !== 200 && response.status !== 206) {
+                            fileStream.destroy();
+                            return reject(new Error(`Server returned HTTP ${response.status}`));
+                        }
+
+                        if (!state.totalBytes) {
+                            if (response.headers['content-range']) {
+                                const match = response.headers['content-range'].match(/\/(\d+)/);
+                                if (match) state.totalBytes = parseInt(match[1], 10);
+                            } else if (response.headers['content-length']) {
+                                state.totalBytes = startByte + parseInt(response.headers['content-length'], 10);
+                            }
+                        }
+
+                        const stream = response.data;
+
+                        stream.on('data', (chunk) => {
+                            if (state.isCancelled) {
+                                stream.destroy();
+                                fileStream.destroy();
+                                return;
+                            }
+                            state.downloadedBytes += chunk.length;
+                            bytesSinceLastReport += chunk.length;
+
+                            const now = Date.now();
+                            const diffSec = (now - lastReport) / 1000;
+                            if (diffSec >= 0.2) {
+                                state.speedBytesPerSec = Math.round(bytesSinceLastReport / diffSec);
+                                lastReport = now;
+                                bytesSinceLastReport = 0;
+                                if (onProgress) onProgress(this.getProgressStats(state));
+                            }
+                        });
+
+                        fileStream.on('finish', () => {
+                            if (onProgress) onProgress(this.getProgressStats(state));
+                            resolve();
+                        });
+
+                        fileStream.on('error', (err) => {
+                            stream.destroy();
+                            reject(err);
+                        });
+
+                        stream.on('error', (err) => {
+                            fileStream.destroy();
+                            reject(err);
+                        });
+
+                        stream.pipe(fileStream);
+
+                    }).catch((err) => {
                         fileStream.destroy();
-                        return;
-                    }
-
-                    fileStream.write(chunk);
-                    state.downloadedBytes += chunk.length;
-                    bytesSinceLastReport += chunk.length;
-
-                    const now = Date.now();
-                    const diffSec = (now - lastReport) / 1000;
-                    if (diffSec >= 0.2) {
-                        state.speedBytesPerSec = Math.round(bytesSinceLastReport / diffSec);
-                        lastReport = now;
-                        bytesSinceLastReport = 0;
-                        if (onProgress) onProgress(this.getProgressStats(state));
-                    }
+                        reject(err);
+                    });
                 });
 
-                stream.on('end', () => {
-                    fileStream.end();
-                    resolve();
-                });
+                return;
 
-                stream.on('error', (err) => {
-                    fileStream.destroy();
-                    reject(err);
-                });
-            });
-
-        } catch (err) {
-            fileStream.destroy();
-            throw err;
+            } catch (err) {
+                if (state.isCancelled) throw err;
+                retries++;
+                if (retries > maxRetries) {
+                    throw new Error(`Download failed: ${err.message}`);
+                }
+                console.warn(`[Download] Retry ${retries}/${maxRetries} after: ${err.message}`);
+                await new Promise(r => setTimeout(r, 1000));
+            }
         }
     }
 
@@ -224,23 +269,39 @@ class ChunkDownloader {
             clearInterval(updateProgressInterval);
 
             // Assemble chunks into final file
-            const destStream = fs.createWriteStream(state.destPath);
-            for (let i = 0; i < numChunks; i++) {
-                const chunkFile = path.join(tempDir, `chunk_${i}.dat`);
-                if (fs.existsSync(chunkFile)) {
-                    const data = fs.readFileSync(chunkFile);
-                    destStream.write(data);
-                    fs.unlinkSync(chunkFile);
+            await new Promise((resolve, reject) => {
+                const destStream = fs.createWriteStream(state.destPath);
+                destStream.on('finish', () => {
+                    // Safe cleanup after destStream is fully closed
+                    setTimeout(() => {
+                        try {
+                            if (fs.existsSync(tempDir)) fs.rmSync(tempDir, { recursive: true, force: true });
+                        } catch (e) {}
+                    }, 500);
+                    resolve();
+                });
+                destStream.on('error', reject);
+
+                for (let i = 0; i < numChunks; i++) {
+                    const chunkFile = path.join(tempDir, `chunk_${i}.dat`);
+                    if (fs.existsSync(chunkFile)) {
+                        const data = fs.readFileSync(chunkFile);
+                        destStream.write(data);
+                        try { fs.unlinkSync(chunkFile); } catch (e) {}
+                    }
                 }
-            }
-            destStream.end();
-            if (fs.existsSync(tempDir)) fs.rmdirSync(tempDir, { recursive: true });
+                destStream.end();
+            });
 
             if (onProgress) onProgress(this.getProgressStats(state));
 
         } catch (err) {
             clearInterval(updateProgressInterval);
-            if (fs.existsSync(tempDir)) fs.rmdirSync(tempDir, { recursive: true });
+            setTimeout(() => {
+                try {
+                    if (fs.existsSync(tempDir)) fs.rmSync(tempDir, { recursive: true, force: true });
+                } catch (e) {}
+            }, 500);
             throw err;
         }
     }

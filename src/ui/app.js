@@ -97,9 +97,17 @@ function switchView(targetView) {
     }
 }
 
+const ytHeaderIcon = '<span style="display: inline-flex; align-items: center; color: #FF0000; flex-shrink: 0;"><svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg></span>';
+
+function formatFfmpegVersion(raw) {
+    if (!raw) return 'FFmpeg Ready';
+    const m = String(raw).match(/\d+(\.\d+)*/);
+    return m ? `FFmpeg v${m[0]} Ready` : 'FFmpeg Ready';
+}
+
 function updateHeaderTitle(view) {
     const titles = {
-        downloader: '<i data-lucide="youtube" style="color: #FF0000; width: 30px; height: 30px;"></i> AIO YouTube Downloader',
+        downloader: `${ytHeaderIcon} AIO YouTube Downloader`,
         batch: '<i data-lucide="layers" style="color: var(--m3-color-primary)"></i> Batch YouTube Downloader',
         gallery: '<i data-lucide="folder-heart" style="color: var(--m3-color-primary)"></i> Downloaded YouTube Media',
         settings: '<i data-lucide="settings" style="color: var(--m3-color-primary)"></i> Preferences & FFmpeg Settings'
@@ -501,7 +509,7 @@ function connectWebSocket() {
                     if (ffmpegReadyChip) {
                         ffmpegReadyChip.style.display = 'inline-flex';
                         if (ffmpegVersionText) {
-                            ffmpegVersionText.textContent = msg.data && msg.data.version ? `FFmpeg ${msg.data.version.split(' ')[0]}` : 'FFmpeg Ready';
+                            ffmpegVersionText.textContent = formatFfmpegVersion(msg.data && msg.data.version);
                         }
                     }
                     showSnackbar('FFmpeg installed & verified! High quality muxing is ready.', 'check-circle');
@@ -866,7 +874,7 @@ async function checkFfmpegStatus() {
             if (ffmpegReadyChip) {
                 ffmpegReadyChip.style.display = 'inline-flex';
                 if (ffmpegVersionText) {
-                    ffmpegVersionText.textContent = data.version ? `FFmpeg ${data.version.split(' ')[0]}` : 'FFmpeg Ready';
+                    ffmpegVersionText.textContent = formatFfmpegVersion(data.version);
                 }
             }
             if (ffmpegMissingBanner) ffmpegMissingBanner.style.display = 'none';

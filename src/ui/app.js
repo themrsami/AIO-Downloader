@@ -64,6 +64,9 @@ document.addEventListener('DOMContentLoaded', () => {
     connectWebSocket();
     loadLocalHistory();
     setupClipboardListener();
+    checkFfmpegStatus();
+    loadAppSettings();
+    setupFfmpegInstaller();
 });
 
 // Navigation Handler
@@ -96,10 +99,10 @@ function switchView(targetView) {
 
 function updateHeaderTitle(view) {
     const titles = {
-        downloader: '<i data-lucide="download-cloud" style="color: var(--m3-color-primary)"></i> Media Downloader v3',
-        batch: '<i data-lucide="layers" style="color: var(--m3-color-primary)"></i> Batch Multi-Link Downloader',
-        gallery: '<i data-lucide="folder-heart" style="color: var(--m3-color-primary)"></i> Downloaded Media Gallery',
-        settings: '<i data-lucide="settings" style="color: var(--m3-color-primary)"></i> Preferences & Engine Settings'
+        downloader: '<i data-lucide="youtube" style="color: #FF0000; width: 30px; height: 30px;"></i> AIO YouTube Downloader',
+        batch: '<i data-lucide="layers" style="color: var(--m3-color-primary)"></i> Batch YouTube Downloader',
+        gallery: '<i data-lucide="folder-heart" style="color: var(--m3-color-primary)"></i> Downloaded YouTube Media',
+        settings: '<i data-lucide="settings" style="color: var(--m3-color-primary)"></i> Preferences & FFmpeg Settings'
     };
     pageTitle.innerHTML = titles[view] || titles.downloader;
     lucide.createIcons();
@@ -139,6 +142,9 @@ function loadLocalHistory() {
 
 // Theme & Palette Handler
 function setupThemeAndPalette() {
+    const savedPalette = localStorage.getItem('m3_palette') || 'sunset';
+    document.body.setAttribute('data-palette', savedPalette);
+
     themeToggle.addEventListener('click', () => {
         document.body.classList.toggle('light-theme');
         const isLight = document.body.classList.contains('light-theme');
@@ -150,7 +156,8 @@ function setupThemeAndPalette() {
         btn.addEventListener('click', () => {
             const palette = btn.getAttribute('data-palette');
             document.body.setAttribute('data-palette', palette);
-            showSnackbar(`Applied ${palette.toUpperCase()} M3 color palette!`, 'palette');
+            localStorage.setItem('m3_palette', palette);
+            showSnackbar(`Applied ${palette.toUpperCase()} theme!`, 'palette');
         });
     });
 }
@@ -223,12 +230,12 @@ function setupEventListeners() {
 async function handleFetchMedia() {
     const url = urlInput.value.trim();
     if (!url) {
-        showSnackbar('Please enter an Instagram, Facebook, TikTok, Twitter/X, or Pinterest URL.', 'alert-circle');
+        showSnackbar('Please enter a YouTube video, shorts, or music URL.', 'alert-circle');
         return;
     }
 
     fetchBtn.disabled = true;
-    fetchBtn.innerHTML = '<i data-lucide="loader-2" class="spin"></i> Extracting...';
+    fetchBtn.innerHTML = '<i data-lucide="loader-2" class="spin"></i> Fetching...';
     lucide.createIcons();
 
     try {
@@ -253,7 +260,7 @@ async function handleFetchMedia() {
         showSnackbar(`Error: ${err.message}`, 'alert-triangle');
     } finally {
         fetchBtn.disabled = false;
-        fetchBtn.innerHTML = '<i data-lucide="sparkles"></i> Fetch Qualities';
+        fetchBtn.innerHTML = '<i data-lucide="sparkles"></i> Fetch Video';
         lucide.createIcons();
     }
 }
@@ -263,8 +270,8 @@ function openQualityModal(media) {
     dialogThumb.src = media.thumbnail || 'https://images.unsplash.com/photo-1611162617213-7d7a39e9b1d7?w=150';
     dialogTitle.textContent = media.title || 'Untitled Media';
     dialogAuthor.textContent = `By ${media.author || 'Creator'}`;
-    dialogPlatform.textContent = media.platform.toUpperCase();
-    dialogPlatform.className = `m3-chip ${media.platform}`;
+    dialogPlatform.textContent = (media.platform || 'YOUTUBE').toUpperCase();
+    dialogPlatform.className = `m3-chip ${media.platform || 'youtube'}`;
 
     selectedQualityIndex = 0;
     qualityOptionsList.innerHTML = '';
@@ -274,12 +281,14 @@ function openQualityModal(media) {
         item.className = `quality-option-item ${index === 0 ? 'selected' : ''}`;
 
         let typeBadge = '';
-        if (q.isVideoOnly) {
-            typeBadge = '<span class="m3-chip" style="font-size: 11px; padding: 2px 7px; margin-left: 6px; background: rgba(255, 152, 0, 0.18); color: #FFA726; border-radius: 6px; font-weight: 600;">Video Only</span>';
+        if (q.requiresMuxing) {
+            typeBadge = '<span class="m3-chip" style="font-size: 11px; padding: 2px 8px; margin-left: 6px; background: rgba(16, 185, 129, 0.2); color: #10B981; border: 1px solid rgba(16, 185, 129, 0.35); border-radius: 6px; font-weight: 700; display: inline-flex; align-items: center; gap: 4px;"><i data-lucide="sparkles" style="width: 12px; height: 12px;"></i>Video + Audio (FFmpeg Merged)</span>';
+        } else if (q.isVideoOnly) {
+            typeBadge = '<span class="m3-chip" style="font-size: 11px; padding: 2px 8px; margin-left: 6px; background: rgba(245, 158, 11, 0.2); color: #F59E0B; border: 1px solid rgba(245, 158, 11, 0.35); border-radius: 6px; font-weight: 600;">Video Only</span>';
         } else if (q.hasAudio && q.hasVideo) {
-            typeBadge = '<span class="m3-chip" style="font-size: 11px; padding: 2px 7px; margin-left: 6px; background: rgba(76, 175, 80, 0.18); color: #66BB6A; border-radius: 6px; font-weight: 600;">Video + Audio</span>';
+            typeBadge = '<span class="m3-chip" style="font-size: 11px; padding: 2px 8px; margin-left: 6px; background: rgba(59, 130, 246, 0.2); color: #60A5FA; border: 1px solid rgba(59, 130, 246, 0.35); border-radius: 6px; font-weight: 600;">Standard (Video + Audio)</span>';
         } else if (q.type === 'audio') {
-            typeBadge = '<span class="m3-chip" style="font-size: 11px; padding: 2px 7px; margin-left: 6px; background: rgba(33, 150, 243, 0.18); color: #42A5F5; border-radius: 6px; font-weight: 600;">Audio Track</span>';
+            typeBadge = '<span class="m3-chip" style="font-size: 11px; padding: 2px 8px; margin-left: 6px; background: rgba(168, 85, 247, 0.2); color: #C084FC; border: 1px solid rgba(168, 85, 247, 0.35); border-radius: 6px; font-weight: 600;">Audio Track</span>';
         }
 
         item.innerHTML = `
@@ -305,6 +314,7 @@ function openQualityModal(media) {
     });
 
     qualityDialog.classList.add('active');
+    lucide.createIcons();
 }
 
 function closeQualityModal() {
@@ -346,10 +356,15 @@ async function triggerAutoDownloadFile(url, fileName) {
 async function handleConfirmDownload() {
     if (!extractedMedia || selectedQualityIndex === undefined) return;
 
-    closeQualityModal();
-    showSnackbar('Starting fast media download...', 'zap');
-
     const q = extractedMedia.qualities[selectedQualityIndex] || extractedMedia.qualities[0];
+    closeQualityModal();
+
+    if (q.requiresMuxing) {
+        showSnackbar('Starting 1080p/4K download & FFmpeg stream muxing...', 'sparkles');
+    } else {
+        showSnackbar('Starting fast media download...', 'zap');
+    }
+
     const taskId = `dl_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     const safeTitle = (extractedMedia.title || 'media').replace(/[^a-zA-Z0-9_\-\s]/g, '').trim().substring(0, 35);
     const fileName = `${extractedMedia.platform}_${safeTitle}_${Date.now()}.${q.format || 'mp4'}`;
@@ -362,17 +377,16 @@ async function handleConfirmDownload() {
         quality: q.quality,
         format: q.format || 'mp4',
         status: 'downloading',
-        percent: 10,
-        speedFormatted: 'Downloading...',
+        percent: 5,
+        speedFormatted: 'Starting parallel stream...',
+        etaFormatted: q.requiresMuxing ? 'Downloading video & audio streams...' : 'Downloading...',
         downloadUrl: q.url,
         fileName: fileName,
+        requiresMuxing: Boolean(q.requiresMuxing),
         timestamp: Date.now()
     };
 
     saveHistoryRecord(record);
-
-    // Immediately trigger native browser auto-download to Downloads folder
-    triggerAutoDownloadFile(q.url, fileName);
 
     try {
         const res = await fetch('/api/download', {
@@ -391,15 +405,22 @@ async function handleConfirmDownload() {
             const data = await res.json();
             if (data.success) {
                 urlInput.value = '';
-                record.status = 'completed';
-                record.percent = 100;
-                record.speedFormatted = 'Completed';
-                saveHistoryRecord(record);
+                if (data.taskId && data.taskId !== taskId) {
+                    const history = getLocalHistory();
+                    const idx = history.findIndex(h => h.id === taskId);
+                    if (idx >= 0) {
+                        history[idx].id = data.taskId;
+                        if (data.savePath) history[idx].filePath = data.savePath;
+                        saveLocalHistory(history);
+                        renderDownloadsList(history);
+                    }
+                }
             } else {
-                record.status = 'completed';
-                record.percent = 100;
-                record.speedFormatted = 'Completed';
+                record.status = 'error';
+                record.speedFormatted = 'Download failed';
+                record.etaFormatted = data.error || 'Server error';
                 saveHistoryRecord(record);
+                showSnackbar(data.error || 'Download failed', 'alert-triangle');
             }
         } else {
             // Binary stream response (Vercel serverless mode)
@@ -418,13 +439,15 @@ async function handleConfirmDownload() {
             record.status = 'completed';
             record.percent = 100;
             record.speedFormatted = 'Completed';
+            record.etaFormatted = 'Done';
             saveHistoryRecord(record);
         }
     } catch (err) {
-        record.status = 'completed';
-        record.percent = 100;
-        record.speedFormatted = 'Completed';
+        record.status = 'error';
+        record.speedFormatted = 'Error';
+        record.etaFormatted = err.message;
         saveHistoryRecord(record);
+        showSnackbar(`Download error: ${err.message}`, 'alert-triangle');
     }
 }
 
@@ -435,14 +458,67 @@ function connectWebSocket() {
         ws = new WebSocket(`${wsProtocol}//${window.location.host}`);
 
         ws.onmessage = (event) => {
-            const msg = JSON.parse(event.data);
-            if (msg.type === 'download_progress' || msg.type === 'progress') {
-                updateDownloadProgress(msg.data);
-            } else if (msg.type === 'download_completed') {
-                if (msg.data) saveHistoryRecord(msg.data);
-                showSnackbar('Download Completed!', 'check-circle-2');
-            } else if (msg.type === 'download_error') {
-                showSnackbar(`Download Error: ${msg.error || 'Failed'}`, 'alert-triangle');
+            try {
+                const msg = JSON.parse(event.data);
+                if (msg.type === 'download_progress' || msg.type === 'progress') {
+                    updateDownloadProgress(msg.data);
+                } else if (msg.type === 'download_completed') {
+                    const finishedRecord = msg.data || {};
+                    if (msg.filePath) finishedRecord.filePath = msg.filePath;
+                    if (finishedRecord.id) {
+                        saveHistoryRecord(finishedRecord);
+                    }
+                    showSnackbar('Download & Muxing Completed!', 'check-circle-2');
+                } else if (msg.type === 'download_error') {
+                    showSnackbar(`Download Error: ${msg.error || 'Failed'}`, 'alert-triangle');
+                } else if (msg.type === 'ffmpeg_progress') {
+                    const p = msg.data;
+                    const ffmpegProgressContainer = document.getElementById('ffmpegProgressContainer');
+                    const ffmpegProgressText = document.getElementById('ffmpegProgressText');
+                    const ffmpegProgressPercent = document.getElementById('ffmpegProgressPercent');
+                    const ffmpegProgressBar = document.getElementById('ffmpegProgressBar');
+
+                    if (ffmpegProgressContainer) ffmpegProgressContainer.style.display = 'block';
+                    if (ffmpegProgressBar) ffmpegProgressBar.style.width = `${p.percent}%`;
+                    if (ffmpegProgressPercent) ffmpegProgressPercent.textContent = `${p.percent}%`;
+                    if (ffmpegProgressText) {
+                        if (p.stage === 'extracting') {
+                            ffmpegProgressText.textContent = 'Extracting FFmpeg binaries (PowerShell)...';
+                        } else if (p.stage === 'verifying') {
+                            ffmpegProgressText.textContent = 'Verifying FFmpeg executable...';
+                        } else {
+                            ffmpegProgressText.textContent = `Downloading: ${p.downloadedFormatted || ''} / ${p.totalFormatted || ''} (${p.speedFormatted || ''})`;
+                        }
+                    }
+                } else if (msg.type === 'ffmpeg_ready') {
+                    const ffmpegReadyChip = document.getElementById('ffmpegReadyChip');
+                    const ffmpegMissingBanner = document.getElementById('ffmpegMissingBanner');
+                    const ffmpegProgressContainer = document.getElementById('ffmpegProgressContainer');
+                    const ffmpegVersionText = document.getElementById('ffmpegVersionText');
+
+                    if (ffmpegProgressContainer) ffmpegProgressContainer.style.display = 'none';
+                    if (ffmpegMissingBanner) ffmpegMissingBanner.style.display = 'none';
+                    if (ffmpegReadyChip) {
+                        ffmpegReadyChip.style.display = 'inline-flex';
+                        if (ffmpegVersionText) {
+                            ffmpegVersionText.textContent = msg.data && msg.data.version ? `FFmpeg ${msg.data.version.split(' ')[0]}` : 'FFmpeg Ready';
+                        }
+                    }
+                    showSnackbar('FFmpeg installed & verified! High quality muxing is ready.', 'check-circle');
+                    lucide.createIcons();
+                } else if (msg.type === 'ffmpeg_error') {
+                    const installFfmpegBtn = document.getElementById('installFfmpegBtn');
+                    const ffmpegProgressContainer = document.getElementById('ffmpegProgressContainer');
+                    if (ffmpegProgressContainer) ffmpegProgressContainer.style.display = 'none';
+                    if (installFfmpegBtn) {
+                        installFfmpegBtn.disabled = false;
+                        installFfmpegBtn.innerHTML = '<i data-lucide="download"></i> Retry Install FFmpeg';
+                        lucide.createIcons();
+                    }
+                    showSnackbar(`FFmpeg error: ${msg.error}`, 'alert-triangle');
+                }
+            } catch (e) {
+                console.error('WS parse error:', e);
             }
         };
 
@@ -463,17 +539,25 @@ function updateDownloadProgress(stats) {
         const speedText = card.querySelector('.speed-text');
         const etaText = card.querySelector('.eta-text');
 
-        if (progressBar) progressBar.style.width = `${stats.percent}%`;
+        if (progressBar) {
+            progressBar.style.width = `${stats.percent}%`;
+            if (stats.status === 'muxing') {
+                progressBar.style.background = 'linear-gradient(90deg, #10B981, #059669)';
+            }
+        }
         if (percentText) percentText.textContent = `${stats.percent}%`;
-        if (speedText) speedText.textContent = stats.speedFormatted;
-        if (etaText) etaText.textContent = `ETA: ${stats.etaFormatted}`;
+        if (speedText) speedText.textContent = stats.speedFormatted || '';
+        if (etaText) etaText.textContent = stats.etaFormatted || (stats.status === 'muxing' ? 'Merging audio + video...' : '');
     }
 
-    const record = getLocalHistory().find(h => h.id === stats.id);
+    const history = getLocalHistory();
+    const record = history.find(h => h.id === stats.id);
     if (record) {
         record.percent = stats.percent;
-        record.speedFormatted = stats.speedFormatted;
-        saveLocalHistory(getLocalHistory().map(h => h.id === stats.id ? { ...h, ...stats } : h));
+        if (stats.speedFormatted) record.speedFormatted = stats.speedFormatted;
+        if (stats.etaFormatted) record.etaFormatted = stats.etaFormatted;
+        if (stats.status) record.status = stats.status;
+        saveLocalHistory(history.map(h => h.id === stats.id ? { ...h, ...stats } : h));
     }
 }
 
@@ -486,7 +570,7 @@ function renderDownloadsList(historyList) {
             <div style="text-align: center; padding: 40px; color: var(--m3-color-on-surface-variant);">
                 <i data-lucide="download-cloud" style="width: 48px; height: 48px; opacity: 0.5; margin-bottom: 12px;"></i>
                 <p style="font-size: 15px; font-weight: 500;">No active or past downloads</p>
-                <p style="font-size: 12px; margin-top: 4px;">Paste a link above to start downloading media at ultra-fast speeds.</p>
+                <p style="font-size: 12px; margin-top: 4px;">Paste a YouTube link above to start downloading media at ultra-fast speeds.</p>
             </div>
         `;
         lucide.createIcons();
@@ -499,6 +583,7 @@ function renderDownloadsList(historyList) {
         card.className = 'download-card';
         card.id = `card_${d.id}`;
 
+        const isMuxing = d.status === 'muxing';
         const isDownloading = d.status === 'downloading' || d.status === 'extracting';
         const isCompleted = d.status === 'completed';
 
@@ -508,22 +593,39 @@ function renderDownloadsList(historyList) {
                 <div class="download-title">${d.title || 'Downloading Media...'}</div>
                 <div class="download-meta">
                     <span class="badge-quality">${d.quality || 'HD'}</span>
-                    <span class="speed-text" style="font-weight: 700; color: var(--m3-color-primary);">${d.speedFormatted || 'Downloading...'}</span>
-                    <span class="eta-text">${isDownloading ? (d.etaFormatted || 'In progress...') : (isCompleted ? 'Completed' : 'Failed')}</span>
+                    <span class="speed-text" style="font-weight: 700; color: ${isMuxing ? '#10B981' : 'var(--m3-color-primary)'};">${d.speedFormatted || (isCompleted ? 'Completed' : 'Downloading...')}</span>
+                    <span class="eta-text">${isMuxing ? 'Muxing Streams (FFmpeg)...' : (isDownloading ? (d.etaFormatted || 'In progress...') : (isCompleted ? 'Completed' : 'Failed'))}</span>
                 </div>
                 <div class="m3-progress-container" style="margin-top: 6px;">
-                    <div class="m3-progress-bar" style="width: ${d.percent || (isCompleted ? 100 : 20)}%;"></div>
+                    <div class="m3-progress-bar" style="width: ${d.percent || (isCompleted ? 100 : 20)}%; ${isMuxing ? 'background: linear-gradient(90deg, #10B981, #059669);' : ''}"></div>
                 </div>
             </div>
             <div style="display: flex; gap: 8px; align-items: center;">
                 <span class="progress-percent" style="font-size: 13px; font-weight: 700; min-width: 40px; text-align: right;">${d.percent || (isCompleted ? 100 : 20)}%</span>
-                ${isCompleted && d.downloadUrl ? `
-                    <button class="m3-btn-icon play-btn dl-trigger-btn" title="Download File directly to Downloads" style="color: var(--m3-color-primary); background: transparent; border: none; cursor: pointer;">
-                        <i data-lucide="download"></i>
+                ${isCompleted ? `
+                    <button class="m3-btn-icon open-folder-item-btn" data-filepath="${d.filePath || ''}" title="Show in Windows Explorer" style="color: var(--m3-color-on-surface-variant); background: rgba(255,255,255,0.06); border: none; cursor: pointer; border-radius: var(--m3-shape-s); width: 34px; height: 34px; display: flex; align-items: center; justify-content: center;">
+                        <i data-lucide="folder-open" style="width: 18px; height: 18px;"></i>
                     </button>
+                    ${d.downloadUrl && !d.requiresMuxing ? `
+                        <button class="m3-btn-icon play-btn dl-trigger-btn" title="Download File directly to Browser" style="color: var(--m3-color-primary); background: transparent; border: none; cursor: pointer;">
+                            <i data-lucide="download" style="width: 18px; height: 18px;"></i>
+                        </button>
+                    ` : ''}
                 ` : ''}
             </div>
         `;
+
+        const folderBtn = card.querySelector('.open-folder-item-btn');
+        if (folderBtn) {
+            folderBtn.addEventListener('click', () => {
+                const fp = folderBtn.getAttribute('data-filepath');
+                fetch('/api/open-folder', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filePath: fp || undefined })
+                });
+            });
+        }
 
         const btn = card.querySelector('.dl-trigger-btn');
         if (btn) {
@@ -564,9 +666,9 @@ function renderGallery() {
         card.innerHTML = `
             <div style="position: relative; border-radius: var(--m3-shape-m); overflow: hidden; height: 160px; background: #000;">
                 <img src="${item.thumbnail || 'https://images.unsplash.com/photo-1611162617213-7d7a39e9b1d7?w=300'}" style="width: 100%; height: 100%; object-fit: cover;">
-                <div style="position: absolute; top: 8px; left: 8px;" class="m3-chip ${item.platform}">${(item.platform || 'MEDIA').toUpperCase()}</div>
-                <button class="m3-btn-icon play-gallery-btn dl-gallery-trigger-btn" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.6); color: #fff; width: 48px; height: 48px; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center;">
-                    <i data-lucide="download" style="width: 24px; height: 24px;"></i>
+                <div style="position: absolute; top: 8px; left: 8px;" class="m3-chip ${item.platform}">${(item.platform || 'YOUTUBE').toUpperCase()}</div>
+                <button class="m3-btn-icon open-gallery-folder-btn" data-filepath="${item.filePath || ''}" style="position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,0.65); color: #fff; width: 34px; height: 34px; border: none; cursor: pointer; border-radius: var(--m3-shape-s); display: flex; align-items: center; justify-content: center;" title="Show in Windows Explorer">
+                    <i data-lucide="folder-open" style="width: 16px; height: 16px;"></i>
                 </button>
             </div>
             <div style="margin-top: 10px;">
@@ -578,10 +680,16 @@ function renderGallery() {
             </div>
         `;
 
-        const btn = card.querySelector('.dl-gallery-trigger-btn');
-        if (btn) {
-            btn.addEventListener('click', () => {
-                triggerAutoDownloadFile(item.downloadUrl, item.fileName);
+        const folderBtn = card.querySelector('.open-gallery-folder-btn');
+        if (folderBtn) {
+            folderBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const fp = folderBtn.getAttribute('data-filepath');
+                fetch('/api/open-folder', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filePath: fp || undefined })
+                });
             });
         }
 
@@ -730,7 +838,7 @@ function setupClipboardListener() {
 }
 
 function isMediaUrl(text) {
-    return text.includes('instagram.com') || text.includes('facebook.com') || text.includes('fb.watch') || text.includes('tiktok.com') || text.includes('twitter.com') || text.includes('x.com') || text.includes('pinterest.com') || text.includes('pin.it');
+    return text.includes('youtube.com') || text.includes('youtu.be') || text.includes('instagram.com') || text.includes('facebook.com') || text.includes('fb.watch') || text.includes('tiktok.com') || text.includes('twitter.com') || text.includes('x.com') || text.includes('pinterest.com') || text.includes('pin.it');
 }
 
 // Toast Snackbar Notification
@@ -743,4 +851,83 @@ function showSnackbar(message, iconName = 'info') {
     setTimeout(() => {
         appSnackbar.classList.remove('active');
     }, 4000);
+}
+
+// Check FFmpeg Status on App Start
+async function checkFfmpegStatus() {
+    const ffmpegReadyChip = document.getElementById('ffmpegReadyChip');
+    const ffmpegMissingBanner = document.getElementById('ffmpegMissingBanner');
+    const ffmpegVersionText = document.getElementById('ffmpegVersionText');
+
+    try {
+        const res = await fetch('/api/ffmpeg/status');
+        const data = await res.json();
+        if (data.success && data.available) {
+            if (ffmpegReadyChip) {
+                ffmpegReadyChip.style.display = 'inline-flex';
+                if (ffmpegVersionText) {
+                    ffmpegVersionText.textContent = data.version ? `FFmpeg ${data.version.split(' ')[0]}` : 'FFmpeg Ready';
+                }
+            }
+            if (ffmpegMissingBanner) ffmpegMissingBanner.style.display = 'none';
+        } else {
+            if (ffmpegReadyChip) ffmpegReadyChip.style.display = 'none';
+            if (ffmpegMissingBanner) ffmpegMissingBanner.style.display = 'block';
+        }
+        lucide.createIcons();
+    } catch (e) {
+        console.warn('Could not check FFmpeg status:', e);
+    }
+}
+
+// Load Application Settings (Download Folder, etc.)
+async function loadAppSettings() {
+    try {
+        const res = await fetch('/api/downloads');
+        const data = await res.json();
+        if (data.success && data.defaultDownloadDir) {
+            if (storagePathInput) storagePathInput.value = data.defaultDownloadDir;
+        }
+    } catch (e) {
+        console.warn('Could not load app settings:', e);
+    }
+}
+
+// Setup FFmpeg One-Click Installer
+function setupFfmpegInstaller() {
+    const installFfmpegBtn = document.getElementById('installFfmpegBtn');
+    const ffmpegProgressContainer = document.getElementById('ffmpegProgressContainer');
+    const ffmpegProgressText = document.getElementById('ffmpegProgressText');
+    const ffmpegProgressPercent = document.getElementById('ffmpegProgressPercent');
+    const ffmpegProgressBar = document.getElementById('ffmpegProgressBar');
+
+    if (installFfmpegBtn) {
+        installFfmpegBtn.addEventListener('click', async () => {
+            installFfmpegBtn.disabled = true;
+            installFfmpegBtn.innerHTML = '<i data-lucide="loader-2" class="spin"></i> Downloading FFmpeg...';
+            lucide.createIcons();
+
+            if (ffmpegProgressContainer) ffmpegProgressContainer.style.display = 'block';
+            if (ffmpegProgressText) ffmpegProgressText.textContent = 'Connecting to download server...';
+            if (ffmpegProgressPercent) ffmpegProgressPercent.textContent = '0%';
+            if (ffmpegProgressBar) ffmpegProgressBar.style.width = '0%';
+
+            try {
+                const res = await fetch('/api/ffmpeg/install', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const data = await res.json();
+                if (!data.success) {
+                    throw new Error(data.error || 'Failed to start installation');
+                }
+            } catch (err) {
+                showSnackbar(`FFmpeg install failed: ${err.message}`, 'alert-triangle');
+                installFfmpegBtn.disabled = false;
+                installFfmpegBtn.innerHTML = '<i data-lucide="download"></i> Download & Install FFmpeg (One-Click)';
+                lucide.createIcons();
+                if (ffmpegProgressContainer) ffmpegProgressContainer.style.display = 'none';
+            }
+        });
+    }
 }

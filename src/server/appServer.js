@@ -12,6 +12,7 @@ const twitterScraper = require('../engine/twitterScraper.js');
 const pinterestScraper = require('../engine/pinterestScraper.js');
 const youtubeScraper = require('../engine/youtubeScraper.js');
 const chunkDownloader = require('../engine/chunkDownloader.js');
+const ffmpegManager = require('../engine/ffmpegManager.js');
 
 const app = express();
 const server = http.createServer(app);
@@ -25,18 +26,63 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, '../ui')));
 
 // Ensure downloads directory exists
-const downloadsFolder = path.join(process.env.USERPROFILE || process.env.HOME || '.', 'Downloads', 'M3Downloader');
-if (!fs.existsSync(downloadsFolder)) {
-    fs.mkdirSync(downloadsFolder, { recursive: true });
+let currentDownloadFolder = path.join(process.env.USERPROFILE || process.env.HOME || '.', 'Downloads', 'YouTubeDownloader');
+if (!fs.existsSync(currentDownloadFolder)) {
+    fs.mkdirSync(currentDownloadFolder, { recursive: true });
 }
 
 // Get Downloads History & Settings
 app.get('/api/downloads', (req, res) => {
     res.json({
         success: true,
-        defaultDownloadDir: downloadsFolder,
+        defaultDownloadDir: currentDownloadFolder,
         downloads: downloadsStore
     });
+});
+
+// Update Download Directory
+app.post('/api/set-download-dir', (req, res) => {
+    const { folderPath } = req.body;
+    if (folderPath && fs.existsSync(folderPath)) {
+        currentDownloadFolder = folderPath;
+        return res.json({ success: true, downloadDir: currentDownloadFolder });
+    }
+    return res.status(400).json({ error: 'Selected directory does not exist.' });
+});
+
+// FFmpeg Status Endpoint
+app.get('/api/ffmpeg/status', async (req, res) => {
+    try {
+        const status = await ffmpegManager.detect();
+        res.json({ success: true, ...status });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// FFmpeg One-Click Auto-Installer Endpoint
+app.post('/api/ffmpeg/install', async (req, res) => {
+    try {
+        res.json({ success: true, message: 'Installation started' });
+
+        // Run background install with live websocket broadcasts
+        const status = await ffmpegManager.install((progress) => {
+            broadcastWS({
+                type: 'ffmpeg_progress',
+                data: progress
+            });
+        });
+
+        broadcastWS({
+            type: 'ffmpeg_ready',
+            data: status
+        });
+    } catch (e) {
+        broadcastWS({
+            type: 'ffmpeg_error',
+            error: e.message
+        });
+    }
 });
 
 // Clear Completed Downloads History
@@ -88,6 +134,8 @@ app.post('/api/download', async (req, res) => {
     const { qualityUrl, fileName, title, platform, quality, media, selectedQualityIndex } = req.body;
 
     let targetUrl = qualityUrl;
+    let targetAudioUrl = null;
+    let requiresMuxing = false;
     let targetFileName = fileName;
     let targetTitle = title;
     let targetPlatform = platform;
@@ -99,6 +147,8 @@ app.post('/api/download', async (req, res) => {
         const idx = selectedQualityIndex || 0;
         const q = media.qualities[idx] || media.qualities[0];
         targetUrl = q.url;
+        targetAudioUrl = q.audioUrl || null;
+        requiresMuxing = Boolean(q.requiresMuxing && targetAudioUrl);
         targetTitle = media.title;
         targetPlatform = media.platform;
         targetQuality = q.quality;
@@ -113,7 +163,7 @@ app.post('/api/download', async (req, res) => {
     }
 
     const saveFileName = targetFileName || `media_${Date.now()}.mp4`;
-    const targetFilePath = path.join(downloadsFolder, saveFileName);
+    const targetFilePath = path.join(currentDownloadFolder, saveFileName);
     const taskId = `task_${Date.now()}`;
 
     const record = {
@@ -126,9 +176,10 @@ app.post('/api/download', async (req, res) => {
         status: 'downloading',
         percent: 0,
         speedFormatted: '0 KB/s',
-        etaFormatted: 'Calculating...',
+        etaFormatted: 'Starting...',
         filePath: targetFilePath,
-        saveFileName: saveFileName
+        saveFileName: saveFileName,
+        isMuxed: requiresMuxing
     };
 
     downloadsStore.unshift(record);
@@ -136,27 +187,108 @@ app.post('/api/download', async (req, res) => {
     // Respond immediately with Task ID
     res.json({ success: true, taskId, record, savePath: targetFilePath });
 
-    // Execute 6-stream parallel chunk download in background
+    // Execute background download & optional stream muxing
     try {
-        await chunkDownloader.downloadParallel(targetUrl, targetFilePath, (progress) => {
-            record.percent = progress.percent;
-            record.speedFormatted = progress.speedFormatted;
-            record.etaFormatted = progress.etaFormatted;
+        if (requiresMuxing && targetAudioUrl) {
+            const tempVideoPath = path.join(currentDownloadFolder, `temp_${taskId}_video.${targetFormat}`);
+            const tempAudioPath = path.join(currentDownloadFolder, `temp_${taskId}_audio.m4a`);
+
+            // Step 1: Download Video Stream (0% - 75%)
+            record.status = 'downloading';
+            record.etaFormatted = 'Downloading video stream...';
+            await chunkDownloader.downloadParallel(targetUrl, tempVideoPath, (progress) => {
+                record.percent = Math.round(progress.percent * 0.75);
+                record.speedFormatted = progress.speedFormatted;
+                record.etaFormatted = `Video: ${progress.percent}% • ${progress.etaFormatted}`;
+
+                broadcastWS({
+                    type: 'download_progress',
+                    taskId,
+                    data: {
+                        id: taskId,
+                        percent: record.percent,
+                        speedFormatted: record.speedFormatted,
+                        etaFormatted: record.etaFormatted,
+                        status: 'downloading'
+                    }
+                });
+            });
+
+            // Step 2: Download Audio Stream (75% - 92%)
+            record.etaFormatted = 'Downloading audio track...';
+            await chunkDownloader.downloadParallel(targetAudioUrl, tempAudioPath, (progress) => {
+                record.percent = 75 + Math.round(progress.percent * 0.17);
+                record.speedFormatted = progress.speedFormatted;
+                record.etaFormatted = `Audio: ${progress.percent}% • ${progress.etaFormatted}`;
+
+                broadcastWS({
+                    type: 'download_progress',
+                    taskId,
+                    data: {
+                        id: taskId,
+                        percent: record.percent,
+                        speedFormatted: record.speedFormatted,
+                        etaFormatted: record.etaFormatted,
+                        status: 'downloading'
+                    }
+                });
+            });
+
+            // Step 3: Fast Stream-Copy Muxing with FFmpeg (92% - 100%)
+            record.status = 'muxing';
+            record.percent = 95;
+            record.speedFormatted = 'Muxing Streams';
+            record.etaFormatted = 'Merging video & audio with FFmpeg...';
 
             broadcastWS({
                 type: 'download_progress',
                 taskId,
                 data: {
                     id: taskId,
-                    percent: progress.percent,
-                    downloadedBytes: progress.downloadedBytes,
-                    totalBytes: progress.totalBytes,
-                    speedBytes: progress.speedBytes,
-                    speedFormatted: progress.speedFormatted,
-                    etaFormatted: progress.etaFormatted
+                    percent: 95,
+                    speedFormatted: 'Muxing Streams',
+                    etaFormatted: 'Merging video & audio with FFmpeg...',
+                    status: 'muxing'
                 }
             });
-        });
+
+            await ffmpegManager.muxVideoAndAudio(tempVideoPath, tempAudioPath, targetFilePath, (muxProgress) => {
+                broadcastWS({
+                    type: 'download_progress',
+                    taskId,
+                    data: {
+                        id: taskId,
+                        percent: 97,
+                        speedFormatted: 'Muxing Streams',
+                        etaFormatted: muxProgress.status || 'Merging...',
+                        status: 'muxing'
+                    }
+                });
+            });
+
+        } else {
+            // Standard single stream download (progressive MP4 or audio only)
+            await chunkDownloader.downloadParallel(targetUrl, targetFilePath, (progress) => {
+                record.percent = progress.percent;
+                record.speedFormatted = progress.speedFormatted;
+                record.etaFormatted = progress.etaFormatted;
+
+                broadcastWS({
+                    type: 'download_progress',
+                    taskId,
+                    data: {
+                        id: taskId,
+                        percent: progress.percent,
+                        downloadedBytes: progress.downloadedBytes,
+                        totalBytes: progress.totalBytes,
+                        speedBytes: progress.speedBytes,
+                        speedFormatted: progress.speedFormatted,
+                        etaFormatted: progress.etaFormatted,
+                        status: 'downloading'
+                    }
+                });
+            });
+        }
 
         record.status = 'completed';
         record.percent = 100;
@@ -174,6 +306,7 @@ app.post('/api/download', async (req, res) => {
     } catch (e) {
         record.status = 'error';
         record.speedFormatted = 'Failed';
+        record.etaFormatted = e.message;
 
         broadcastWS({
             type: 'download_error',
@@ -186,12 +319,12 @@ app.post('/api/download', async (req, res) => {
 // Open File in Windows Explorer
 app.post('/api/open-folder', (req, res) => {
     const { filePath } = req.body;
-    const targetPath = filePath || downloadsFolder;
+    const targetPath = filePath || currentDownloadFolder;
     const { exec } = require('child_process');
 
     if (process.platform === 'win32') {
         exec(`explorer.exe /select,"${targetPath}"`, (err) => {
-            if (err) exec(`explorer.exe "${downloadsFolder}"`);
+            if (err) exec(`explorer.exe "${currentDownloadFolder}"`);
         });
     }
     res.json({ success: true });

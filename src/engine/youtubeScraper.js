@@ -201,86 +201,165 @@ class YouTubeScraper {
             }
         }
 
-        // 4. Organize, deduplicate, and annotate stream formats
+        // 4. Find the best audio track for stream-copy muxing (prefer native M4A/AAC)
+        let bestAudioFormat = null;
+        let bestM4aFormat = null;
+        for (const f of rawFormats) {
+            if (!f.url) continue;
+            const isAudio = Boolean(f.mimeType && f.mimeType.includes('audio'));
+            if (isAudio) {
+                if (!bestAudioFormat || (f.bitrate || 0) > (bestAudioFormat.bitrate || 0)) {
+                    bestAudioFormat = f;
+                }
+                if (f.mimeType.includes('audio/mp4') || f.mimeType.includes('m4a')) {
+                    if (!bestM4aFormat || (f.bitrate || 0) > (bestM4aFormat.bitrate || 0)) {
+                        bestM4aFormat = f;
+                    }
+                }
+            }
+        }
+        const defaultMuxAudio = bestM4aFormat || bestAudioFormat;
+
+        // 5. Organize, deduplicate, and annotate stream formats
         const qualities = [];
         const seenKeys = new Set();
 
         for (const f of rawFormats) {
             if (!f.url) continue;
 
-            const isAudio = f.mimeType && f.mimeType.includes('audio');
+            const isAudio = Boolean(f.mimeType && f.mimeType.includes('audio'));
             const hasBoth = Boolean(f.hasAudio && f.hasVideo) || (f.mimeType && f.mimeType.includes('avc1') && f.mimeType.includes('mp4a'));
-            const isWebm = f.mimeType && f.mimeType.includes('webm');
+            const isWebm = Boolean(f.mimeType && f.mimeType.includes('webm'));
             const sizeStr = this.formatBytes(f.contentLength);
 
             let resNum = 0;
             if (!isAudio) {
                 const match = (f.qualityLabel || '').match(/(\d+)p/);
-                if (match) resNum = parseInt(match[1], 10);
+                if (match) {
+                    resNum = parseInt(match[1], 10);
+                } else if (f.height) {
+                    resNum = parseInt(f.height, 10);
+                } else if (f.width) {
+                    resNum = parseInt(f.width, 10);
+                }
             }
 
-            let qualityTitle = '';
-            let labelSubtitle = '';
-            let formatExt = 'mp4';
-            let streamType = 'video';
+            let formatExt = isWebm ? 'webm' : 'mp4';
 
             if (isAudio) {
-                streamType = 'audio';
+                // Audio Only Track
                 formatExt = isWebm ? 'webm' : 'm4a';
                 const bitrateKbps = f.bitrate ? Math.round(f.bitrate / 1000) : 128;
-                qualityTitle = isWebm ? `Opus Audio Track (${bitrateKbps} kbps)` : `Original Audio Track (${bitrateKbps} kbps)`;
-                labelSubtitle = `Audio Only • ${formatExt.toUpperCase()}${sizeStr ? ` • ${sizeStr}` : ''}`;
+                const audioKey = `audio_${formatExt}_${bitrateKbps}`;
+                if (!seenKeys.has(audioKey)) {
+                    seenKeys.add(audioKey);
+                    qualities.push({
+                        quality: isWebm ? `Opus Audio Track (${bitrateKbps} kbps)` : `Original Audio Track (${bitrateKbps} kbps)`,
+                        format: formatExt,
+                        type: 'audio',
+                        hasAudio: true,
+                        hasVideo: false,
+                        isVideoOnly: false,
+                        requiresMuxing: false,
+                        resolution: 0,
+                        sizeBytes: f.contentLength ? parseInt(f.contentLength, 10) : null,
+                        sizeFormatted: sizeStr,
+                        url: f.url,
+                        label: `Audio Only • ${formatExt.toUpperCase()}${sizeStr ? ` • ${sizeStr}` : ''}`,
+                        itag: f.itag
+                    });
+                }
             } else if (hasBoth) {
-                qualityTitle = `${resNum || 360}p Standard (Video + Audio)`;
-                formatExt = 'mp4';
-                labelSubtitle = `Video + Audio (Progressive MP4)${sizeStr ? ` • ${sizeStr}` : ''}`;
+                // Pre-merged Progressive Stream (e.g. 720p / 360p)
+                const progKey = `prog_${resNum}_mp4`;
+                if (!seenKeys.has(progKey)) {
+                    seenKeys.add(progKey);
+                    qualities.push({
+                        quality: `${resNum || 360}p Standard (Video + Audio)`,
+                        format: 'mp4',
+                        type: 'video',
+                        hasAudio: true,
+                        hasVideo: true,
+                        isVideoOnly: false,
+                        requiresMuxing: false,
+                        resolution: resNum,
+                        sizeBytes: f.contentLength ? parseInt(f.contentLength, 10) : null,
+                        sizeFormatted: sizeStr,
+                        url: f.url,
+                        label: `Video + Audio (Progressive MP4)${sizeStr ? ` • ${sizeStr}` : ''}`,
+                        itag: f.itag
+                    });
+                }
             } else {
-                // Adaptive Video Only
-                formatExt = isWebm ? 'webm' : 'mp4';
+                // High Resolution Adaptive Stream (1080p, 1440p, 2160p, 720p, etc.)
                 let resName = `${resNum}p`;
                 if (resNum >= 2160) resName = '2160p 4K UHD';
                 else if (resNum >= 1440) resName = '1440p 2K QHD';
                 else if (resNum >= 1080) resName = '1080p Full HD';
                 else if (resNum >= 720) resName = '720p HD';
+                else if (resNum >= 480) resName = '480p SD';
 
-                qualityTitle = `${resName} (${formatExt.toUpperCase()})`;
-                labelSubtitle = `Video Only (No Sound - Fast DASH)${sizeStr ? ` • ${sizeStr}` : ''}`;
-            }
+                // Option 1: Merged Video + Audio (using FFmpeg stream copy)
+                if (defaultMuxAudio && !isWebm) {
+                    const mergedKey = `merged_${resNum}_mp4`;
+                    if (!seenKeys.has(mergedKey)) {
+                        seenKeys.add(mergedKey);
+                        const vBytes = f.contentLength ? parseInt(f.contentLength, 10) : 0;
+                        const aBytes = defaultMuxAudio.contentLength ? parseInt(defaultMuxAudio.contentLength, 10) : 0;
+                        const totalBytes = vBytes + aBytes;
+                        qualities.push({
+                            quality: `${resName} (Video + Audio)`,
+                            format: 'mp4',
+                            type: 'video',
+                            hasAudio: true,
+                            hasVideo: true,
+                            isVideoOnly: false,
+                            requiresMuxing: true,
+                            resolution: resNum,
+                            sizeBytes: totalBytes || null,
+                            sizeFormatted: this.formatBytes(totalBytes),
+                            url: f.url,
+                            audioUrl: defaultMuxAudio.url,
+                            label: `Full Video + Sound (Merged MP4 via FFmpeg)${this.formatBytes(totalBytes) ? ` • ${this.formatBytes(totalBytes)}` : ''}`,
+                            itag: f.itag
+                        });
+                    }
+                }
 
-            const uniqueKey = `${streamType}_${resNum}_${formatExt}_${hasBoth ? 'both' : 'single'}`;
-            if (!seenKeys.has(uniqueKey)) {
-                seenKeys.add(uniqueKey);
-                qualities.push({
-                    quality: qualityTitle,
-                    format: formatExt,
-                    type: streamType,
-                    hasAudio: hasBoth || isAudio,
-                    hasVideo: !isAudio,
-                    isVideoOnly: !isAudio && !hasBoth,
-                    resolution: resNum,
-                    sizeBytes: f.contentLength ? parseInt(f.contentLength, 10) : null,
-                    sizeFormatted: sizeStr,
-                    url: f.url,
-                    label: labelSubtitle,
-                    itag: f.itag
-                });
+                // Option 2: Standalone Video Only (Fast DASH)
+                const dashKey = `dash_${resNum}_${formatExt}`;
+                if (!seenKeys.has(dashKey)) {
+                    seenKeys.add(dashKey);
+                    qualities.push({
+                        quality: `${resName} (${formatExt.toUpperCase()})`,
+                        format: formatExt,
+                        type: 'video',
+                        hasAudio: false,
+                        hasVideo: true,
+                        isVideoOnly: true,
+                        requiresMuxing: false,
+                        resolution: resNum,
+                        sizeBytes: f.contentLength ? parseInt(f.contentLength, 10) : null,
+                        sizeFormatted: sizeStr,
+                        url: f.url,
+                        label: `Video Only (No Sound - Fast DASH)${sizeStr ? ` • ${sizeStr}` : ''}`,
+                        itag: f.itag
+                    });
+                }
             }
         }
 
         if (qualities.length > 0) {
-            // Sort: High resolution video first (descending), then progressive/lower video, then audio tracks
+            // Sort: Video with Audio first (highest resolution first), then Video Only, then Audio
             qualities.sort((a, b) => {
                 if (a.type === 'video' && b.type === 'video') {
-                    // Prefer higher resolution
-                    if (b.resolution !== a.resolution) {
-                        return b.resolution - a.resolution;
-                    }
-                    // Prefer MP4 over WebM for identical resolution
-                    if (a.format === 'mp4' && b.format !== 'mp4') return -1;
-                    if (b.format === 'mp4' && a.format !== 'mp4') return 1;
-                    // Prefer video+audio if same resolution
                     if (a.hasAudio && !b.hasAudio) return -1;
                     if (b.hasAudio && !a.hasAudio) return 1;
+                    if (b.resolution !== a.resolution) {
+                        return (b.resolution || 0) - (a.resolution || 0);
+                    }
+                    if (a.format === 'mp4' && b.format !== 'mp4') return -1;
+                    if (b.format === 'mp4' && a.format !== 'mp4') return 1;
                     return 0;
                 }
                 if (a.type === 'video' && b.type === 'audio') return -1;

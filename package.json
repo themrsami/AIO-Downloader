@@ -1,7 +1,7 @@
 {
-  "name": "media-downloader-m3",
+  "name": "aio-youtube-downloader",
   "version": "1.0.0",
-  "description": "Ultra-fast Native Material v3 Instagram and Facebook Downloader Desktop App without yt-dlp",
+  "description": "Ultra-fast Native YouTube Downloader Desktop App with 4K/1080p FFmpeg Stream Muxing without yt-dlp",
   "main": "main.js",
   "scripts": {
     "start": "node src/server/appServer.js",
@@ -10,12 +10,11 @@
     "build:neu": "npx @neutralinojs/neu build"
   },
   "keywords": [
-    "instagram",
-    "facebook",
-    "downloader",
+    "youtube",
+    "youtube-downloader",
+    "ffmpeg",
     "material-v3",
-    "material-you",
-    "neutralinojs",
+    "electron",
     "fast-downloader"
   ],
   "author": "Antigravity",

@@ -3,21 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Material Downloader v3 - Multi-Site Fast Media Downloader</title>
+    <title>AIO YouTube Downloader - Desktop Edition</title>
     <link rel="stylesheet" href="styles/m3-theme.css">
     <!-- Lucide Icons CDN -->
     <script src="https://unpkg.com/lucide@latest"></script>
 </head>
-<body>
+<body data-palette="sunset">
     <div class="app-container">
 
         <!-- M3 Navigation Rail -->
         <nav class="m3-nav-rail">
             <div class="m3-nav-brand">
-                <div class="brand-logo">
-                    <i data-lucide="zap"></i>
+                <div class="brand-logo" style="background: linear-gradient(135deg, #FF0000 0%, #CC0000 100%); color: #ffffff; box-shadow: 0 4px 12px rgba(255,0,0,0.35);">
+                    <i data-lucide="youtube"></i>
                 </div>
-                <span class="brand-name">M3 Downloader</span>
+                <span class="brand-name" style="color: #FF4D4D; font-weight: 700;">YouTube DL</span>
             </div>
 
             <div class="m3-nav-items">
@@ -63,16 +63,25 @@
             <!-- Top App Bar -->
             <header class="top-app-bar">
                 <div class="app-title-section">
-                    <h1 id="pageTitle">
-                        <i data-lucide="download-cloud" style="color: var(--m3-color-primary)"></i>
-                        Media Downloader v3
+                    <h1 id="pageTitle" style="display: flex; align-items: center; gap: 10px;">
+                        <i data-lucide="youtube" style="color: #FF0000; width: 32px; height: 32px;"></i>
+                        AIO YouTube Downloader
                     </h1>
-                    <span class="subtitle">Ultra-fast Multi-Site Downloader (Instagram, Facebook, TikTok, Twitter/X, Pinterest)</span>
+                    <span class="subtitle">Ultra-fast Native YouTube Downloader with 4K/1080p Stream Muxing (Desktop Edition)</span>
                 </div>
 
                 <div class="top-actions">
+                    <!-- FFmpeg Status Pill Chip -->
+                    <div class="m3-chip" id="ffmpegReadyChip" style="background: rgba(16, 185, 129, 0.15); color: #10B981; font-weight: 600; display: none;">
+                        <i data-lucide="check-circle-2"></i>
+                        <span id="ffmpegVersionText">FFmpeg Ready</span>
+                    </div>
+
                     <!-- Palette Switcher -->
                     <div class="chip-group" style="margin: 0;">
+                        <button class="m3-btn-icon palette-btn" data-palette="sunset" title="YouTube Red Theme" style="color: #F87171;">
+                            <i data-lucide="circle-dot"></i>
+                        </button>
                         <button class="m3-btn-icon palette-btn" data-palette="purple" title="Material Purple" style="color: #D0BCFF;">
                             <i data-lucide="circle-dot"></i>
                         </button>
@@ -80,9 +89,6 @@
                             <i data-lucide="circle-dot"></i>
                         </button>
                         <button class="m3-btn-icon palette-btn" data-palette="ocean" title="Ocean Blue" style="color: #60A5FA;">
-                            <i data-lucide="circle-dot"></i>
-                        </button>
-                        <button class="m3-btn-icon palette-btn" data-palette="sunset" title="Sunset Coral" style="color: #F87171;">
                             <i data-lucide="circle-dot"></i>
                         </button>
                     </div>
@@ -100,32 +106,58 @@
                 <!-- SECTION 1: DOWNLOADER -->
                 <section class="view-section active" id="view-downloader">
 
+                    <!-- FFmpeg Not Installed Warning Banner -->
+                    <div class="m3-card" id="ffmpegMissingBanner" style="border-left: 4px solid #F59E0B; background: rgba(245, 158, 11, 0.08); margin-bottom: 16px; display: none;">
+                        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 14px;">
+                            <div style="display: flex; align-items: center; gap: 14px;">
+                                <i data-lucide="alert-triangle" style="color: #F59E0B; width: 30px; height: 30px; flex-shrink: 0;"></i>
+                                <div>
+                                    <div style="font-weight: 600; font-size: 15px; color: var(--m3-color-on-surface);">FFmpeg is not installed</div>
+                                    <div style="font-size: 13px; color: var(--m3-color-on-surface-variant); margin-top: 2px;">
+                                        Merging high-definition (4K, 2K, 1080p) video with audio requires FFmpeg. You can install it automatically with one click.
+                                    </div>
+                                </div>
+                            </div>
+                            <button class="m3-btn m3-btn-filled" id="installFfmpegBtn" style="background-color: #F59E0B; color: #1E1B16; font-weight: 600; box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3);">
+                                <i data-lucide="download"></i>
+                                Download & Install FFmpeg (One-Click)
+                            </button>
+                        </div>
+                        <!-- Installation Progress Bar -->
+                        <div id="ffmpegProgressContainer" style="display: none; margin-top: 16px;">
+                            <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 6px; color: var(--m3-color-on-surface);">
+                                <span id="ffmpegProgressText">Connecting to download server...</span>
+                                <span id="ffmpegProgressPercent" style="font-weight: 600;">0%</span>
+                            </div>
+                            <div style="background: rgba(255,255,255,0.12); height: 8px; border-radius: 4px; overflow: hidden;">
+                                <div id="ffmpegProgressBar" style="height: 100%; width: 0%; background: #F59E0B; transition: width 0.3s ease;"></div>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- URL Input Card -->
                     <div class="m3-card">
                         <div class="card-header">
                             <div class="card-title">
                                 <i data-lucide="link"></i>
-                                Paste Media Link
+                                Enter YouTube Link
                             </div>
                             <div class="chip-group" style="margin: 0;">
-                                <div class="m3-chip" style="background: rgba(255,0,0,0.15); color: #FF0000;"><i data-lucide="youtube"></i> YouTube</div>
-                                <div class="m3-chip ig"><i data-lucide="instagram"></i> Instagram</div>
-                                <div class="m3-chip fb"><i data-lucide="facebook"></i> Facebook</div>
-                                <div class="m3-chip" style="background: rgba(0,242,234,0.15); color: #00F2EA;"><i data-lucide="music-2"></i> TikTok</div>
-                                <div class="m3-chip" style="background: rgba(29,155,240,0.15); color: #1D9BF0;"><i data-lucide="twitter"></i> Twitter/X</div>
-                                <div class="m3-chip" style="background: rgba(230,0,35,0.15); color: #E60023;"><i data-lucide="pin"></i> Pinterest</div>
+                                <div class="m3-chip" style="background: rgba(255,0,0,0.15); color: #FF0000; font-weight: 600;"><i data-lucide="youtube"></i> YouTube Videos & Shorts</div>
+                                <div class="m3-chip" style="background: rgba(255,0,0,0.08); color: #FF6666;"><i data-lucide="radio"></i> Live VODs</div>
+                                <div class="m3-chip" style="background: rgba(255,0,0,0.08); color: #FF6666;"><i data-lucide="music-2"></i> YouTube Music</div>
                             </div>
                         </div>
 
                         <div class="m3-input-wrapper">
                             <i data-lucide="search" style="color: var(--m3-color-on-surface-variant); margin-left: 4px;"></i>
-                            <input type="text" id="urlInput" placeholder="Paste YouTube, Instagram, Facebook, TikTok, Twitter/X, or Pinterest URL..." autocomplete="off">
+                            <input type="text" id="urlInput" placeholder="Paste YouTube Video, Shorts, Music, or Live URL (e.g. youtube.com/watch?v=... or youtu.be/...)" autocomplete="off">
                             <button class="m3-btn-icon" id="pasteBtn" title="Paste from Clipboard">
                                 <i data-lucide="clipboard-paste"></i>
                             </button>
-                            <button class="m3-btn m3-btn-filled" id="fetchBtn">
+                            <button class="m3-btn m3-btn-filled" id="fetchBtn" style="background-color: #E60000; color: #FFFFFF;">
                                 <i data-lucide="sparkles"></i>
-                                Fetch Qualities
+                                Fetch Video
                             </button>
                         </div>
                     </div>
@@ -169,7 +201,7 @@
                             Paste multiple URLs below (one URL per line). The engine will extract and download all items in queue.
                         </p>
 
-                        <textarea id="batchInput" style="width: 100%; height: 160px; background-color: var(--m3-color-surface-container-high); border: 1px solid var(--m3-color-outline-variant); border-radius: var(--m3-shape-m); color: var(--m3-color-on-surface); padding: 14px; font-family: var(--m3-font-body); font-size: 14px; outline: none; resize: vertical;" placeholder="https://www.instagram.com/reel/123/&#10;https://www.tiktok.com/@user/video/456&#10;https://x.com/user/status/789"></textarea>
+                        <textarea id="batchInput" style="width: 100%; height: 160px; background-color: var(--m3-color-surface-container-high); border: 1px solid var(--m3-color-outline-variant); border-radius: var(--m3-shape-m); color: var(--m3-color-on-surface); padding: 14px; font-family: var(--m3-font-body); font-size: 14px; outline: none; resize: vertical;" placeholder="https://www.youtube.com/watch?v=...&#10;https://youtu.be/...&#10;https://www.youtube.com/shorts/..."></textarea>
 
                         <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 16px;">
                             <div style="display: flex; gap: 12px; align-items: center;">
